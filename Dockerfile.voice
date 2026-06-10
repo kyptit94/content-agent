@@ -7,11 +7,11 @@ ENV PYTHONUNBUFFERED=1
 WORKDIR /app
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends python3 python3-pip python3-dev build-essential ffmpeg libsndfile1 \
+    && apt-get install -y --no-install-recommends python3 python3-pip python3-dev build-essential gcc g++ git ffmpeg libsndfile1 libsndfile1-dev alsa-lib-dev espeak-ng \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements-voice.txt ./requirements-voice.txt
-RUN pip3 install --no-cache-dir -r requirements-voice.txt
+RUN pip3 install --upgrade pip setuptools wheel && pip3 install --no-cache-dir -r requirements-voice.txt
 
 COPY voice_clone ./voice_clone
 
