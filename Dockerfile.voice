@@ -16,7 +16,7 @@ RUN apt-get update \
 
 COPY requirements-voice.txt ./requirements-voice.txt
 RUN pip3 install --upgrade pip setuptools wheel 
-RUN pip3 install --verbose --no-cache-dir -r requirements-voice.txt
+RUN pip3 install --no-cache-dir -r requirements-voice.txt
 
 COPY voice_clone ./voice_clone
 
