@@ -221,3 +221,5 @@ Sau do vao thu muc deploy va chay:
 docker compose up -d --build
 
 Luu y: docker-compose v1 (goi apt: docker-compose) da cu va co the loi tren Python 3.12 (ModuleNotFoundError: distutils). Nen dung Compose v2 (docker compose plugin).
+
+thu build lai ci cd
