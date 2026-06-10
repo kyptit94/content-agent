@@ -1,0 +1,18 @@
+FROM nvidia/cuda:12.1.1-cudnn8-runtime-ubuntu22.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+
+WORKDIR /app
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends python3 python3-pip ffmpeg libsndfile1 \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY requirements-voice.txt ./requirements-voice.txt
+RUN pip3 install --no-cache-dir -r requirements-voice.txt
+
+COPY voice_clone ./voice_clone
+
+CMD ["uvicorn", "voice_clone.server:app", "--host", "0.0.0.0", "--port", "8010"]
