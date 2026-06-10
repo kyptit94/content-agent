@@ -22,7 +22,13 @@ He thong nay da chuyen sang workflow website. Telegram chi dung tuy chon de nhan
 
 ```bash
 sudo apt update
-sudo apt install -y docker.io docker-compose-plugin
+sudo apt install -y ca-certificates curl gnupg
+sudo install -m 0755 -d /etc/apt/keyrings
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+sudo chmod a+r /etc/apt/keyrings/docker.gpg
+echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo $VERSION_CODENAME) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+sudo apt update
+sudo apt install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
 sudo systemctl enable --now docker
 sudo usermod -aG docker $USER
 ```
@@ -173,7 +179,7 @@ CD se chay khi push nhanh main hoac trigger thu cong:
 1. SSH vao server
 2. cd den thu muc deploy
 3. git pull origin main
-4. docker compose up -d --build
+4. docker compose up -d --build (neu khong co, fallback sang docker-compose up -d --build)
 
 Can tao GitHub Actions secrets (Settings -> Secrets and variables -> Actions):
 
@@ -187,3 +193,31 @@ Luu y:
 1. Server can cai docker + docker compose plugin
 2. Thu muc DEPLOY_PATH phai la git repo da clone san
 3. Nen tao .env tren server truoc, khong commit .env vao git
+
+## 12) Server chua cai Docker thi lam gi
+
+SSH vao server, chay:
+
+sudo apt update
+sudo apt install -y ca-certificates curl gnupg
+sudo install -m 0755 -d /etc/apt/keyrings
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+sudo chmod a+r /etc/apt/keyrings/docker.gpg
+echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo $VERSION_CODENAME) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+sudo apt update
+sudo apt install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+sudo systemctl enable --now docker
+sudo usermod -aG docker $USER
+
+Dang xuat roi dang nhap lai SSH de nhan group docker.
+
+Kiem tra:
+
+docker --version
+docker compose version
+
+Sau do vao thu muc deploy va chay:
+
+docker compose up -d --build
+
+Luu y: docker-compose v1 (goi apt: docker-compose) da cu va co the loi tren Python 3.12 (ModuleNotFoundError: distutils). Nen dung Compose v2 (docker compose plugin).

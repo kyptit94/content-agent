@@ -23,7 +23,22 @@ jobs:
           port: 22
           script: |
             set -e
+
+            if ! command -v docker >/dev/null 2>&1; then
+              echo "Docker chua duoc cai tren server. Cai truoc roi chay lai CD."
+              exit 1
+            fi
+
             cd ${{ secrets.DEPLOY_PATH }}
             git pull origin main
-            docker compose up -d --build
+
+            if docker compose version >/dev/null 2>&1; then
+              docker compose up -d --build
+            elif docker-compose --version >/dev/null 2>&1; then
+              docker-compose up -d --build
+            else
+              echo "Khong co Docker Compose hoat dong. Cai Compose v2 (docker compose plugin) roi chay lai CD."
+              exit 1
+            fi
+
             docker image prune -f
