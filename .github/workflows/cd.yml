@@ -32,6 +32,14 @@ jobs:
             cd ${{ secrets.DEPLOY_PATH }}
             git pull origin main
 
+            if [ ! -f .env ]; then
+              echo "Khong tim thay .env trong DEPLOY_PATH. Tao file .env tren server truoc khi deploy."
+              if [ -f .env.example ]; then
+                echo "Goi y: cp .env.example .env va dien cac bien bat buoc."
+              fi
+              exit 1
+            fi
+
             if docker compose version >/dev/null 2>&1; then
               docker compose up -d --build
             elif docker-compose --version >/dev/null 2>&1; then
