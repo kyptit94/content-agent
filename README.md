@@ -154,3 +154,36 @@ Webhook:
 - Audio: /app/data/outputs/<job_id>.wav
 - Video: /app/data/outputs/<job_id>.mp4
 - Upload goc: /app/data/uploads/
+
+## 11) CI/CD voi GitHub Actions
+
+Repo da co san 2 workflow:
+
+- .github/workflows/ci.yml
+- .github/workflows/cd.yml
+
+CI se chay khi push/pull request:
+
+1. Cai dependencies Python
+2. Compile source de bat loi syntax
+3. Build 2 Docker images (app + voice)
+
+CD se chay khi push nhanh main hoac trigger thu cong:
+
+1. SSH vao server
+2. cd den thu muc deploy
+3. git pull origin main
+4. docker compose up -d --build
+
+Can tao GitHub Actions secrets (Settings -> Secrets and variables -> Actions):
+
+- SSH_HOST: IP hoac domain server
+- SSH_USER: user SSH
+- SSH_KEY: private key (PEM) de dang nhap server
+- DEPLOY_PATH: duong dan tren server, vi du /opt/content-agent
+
+Luu y:
+
+1. Server can cai docker + docker compose plugin
+2. Thu muc DEPLOY_PATH phai la git repo da clone san
+3. Nen tao .env tren server truoc, khong commit .env vao git
