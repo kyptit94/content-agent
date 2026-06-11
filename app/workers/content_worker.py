@@ -151,6 +151,12 @@ def main() -> None:
             )
 
             if notify_telegram and notify_chat_id and telegram.enabled:
+                if video_path:
+                    telegram.send_file_to_chat(
+                        chat_id=notify_chat_id,
+                        file_path=video_path,
+                        caption=f"[{job_id}] Video hoàn tất\nTopic: {topic}",
+                    )
                 telegram.send_to_chat(
                     chat_id=notify_chat_id,
                     text=(
