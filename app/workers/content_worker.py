@@ -7,6 +7,8 @@ from app.services.queue_service import QueueService
 from app.services.social_publish_service import SocialPublishService
 from app.services.stock_video_service import StockVideoService
 from app.services.storage_service import StorageService
+from app.services.subtitle_service import estimate_ass_from_text
+from app.services.subtitle_service import srt_to_ass
 from app.services.telegram_service import TelegramService
 from app.services.video_compose_service import VideoComposeService
 from app.services.voice_service import VoiceService
@@ -80,6 +82,8 @@ def main() -> None:
             markdown_path = storage.save_markdown(job_id=job_id, content=content)
 
             audio_path = ""
+            srt_content = ""
+            audio_error = ""
             if create_audio:
                 set_running_status(stage="generating_audio", percent=45, detail="Đang tạo audio")
                 if voice_sample:
@@ -91,12 +95,13 @@ def main() -> None:
                     )
                 else:
                     try:
-                        audio_path = voice.synthesize_edge(
+                        audio_path, srt_content = voice.synthesize_edge_with_subs(
                             text=content[:2200],
                             output_name=f"{job_id}.mp3",
                             voice_name=edge_tts_voice,
                         )
-                    except Exception:
+                    except Exception as audio_exc:
+                        audio_error = str(audio_exc)
                         audio_path = ""
 
             video_path = ""
@@ -120,11 +125,28 @@ def main() -> None:
                     source_path = user_video_path
                     video_source = "web-upload-user-video"
 
+                # Generate subtitle ASS file
+                subtitle_path: str | None = None
+                if settings.video_burn_subtitles and audio_path:
+                    ass_out = str(Path("/app/data/outputs") / f"{job_id}.ass")
+                    try:
+                        if srt_content:
+                            subtitle_path = srt_to_ass(srt_content, ass_out)
+                        else:
+                            subtitle_path = estimate_ass_from_text(
+                                text=content[:2200],
+                                audio_path=audio_path,
+                                output_path=ass_out,
+                            ) or None
+                    except Exception:
+                        subtitle_path = None
+
                 if (
                     source_path == user_video_path
                     and settings.video_preserve_quality
                     and not audio_path
                     and not settings.video_text_overlay
+                    and not subtitle_path
                 ):
                     video_path = source_path
                 else:
@@ -136,6 +158,7 @@ def main() -> None:
                         title=topic,
                         preserve_quality=settings.video_preserve_quality,
                         overlay_text=settings.video_text_overlay,
+                        subtitle_path=subtitle_path,
                     )
 
             publish_results: list[str] = []
@@ -169,6 +192,7 @@ def main() -> None:
                     "outputs": {
                         "markdown_path": markdown_path,
                         "audio_path": audio_path or None,
+                        "audio_error": audio_error or None,
                         "video_path": video_path or None,
                         "video_source": video_source or None,
                     },

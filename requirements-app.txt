@@ -7,3 +7,4 @@ requests==2.32.4
 python-dotenv==1.1.1
 python-multipart==0.0.20
 edge-tts==6.1.12
+gTTS==2.5.4

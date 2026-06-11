@@ -37,6 +37,7 @@ class Settings(BaseSettings):
     stock_video_cache_ttl_sec: int = Field(default=604800, alias="STOCK_VIDEO_CACHE_TTL_SEC")
     video_preserve_quality: bool = Field(default=True, alias="VIDEO_PRESERVE_QUALITY")
     video_text_overlay: bool = Field(default=False, alias="VIDEO_TEXT_OVERLAY")
+    video_burn_subtitles: bool = Field(default=True, alias="VIDEO_BURN_SUBTITLES")
     video_reencode_crf: int = Field(default=18, alias="VIDEO_REENCODE_CRF")
     video_reencode_preset: str = Field(default="medium", alias="VIDEO_REENCODE_PRESET")
 

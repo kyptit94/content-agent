@@ -6,7 +6,7 @@ ENV PYTHONUNBUFFERED=1
 WORKDIR /app
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends curl ffmpeg \
+    && apt-get install -y --no-install-recommends curl ffmpeg libass9 fonts-noto fonts-noto-cjk \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements-app.txt ./requirements-app.txt
