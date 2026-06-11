@@ -306,9 +306,9 @@ def web_home() -> str:
         <p>Trợ lý này sẽ dẫn bạn đi từng bước để lên ý tưởng, chuẩn bị nguồn video và chạy job rõ ràng.</p>
         <div class=\"step-flow\">
           <span id=\"chip1\" class=\"step-chip\">1. Xác thực</span>
-          <span id=\"chip2\" class=\"step-chip\">2. Upload Video</span>
-          <span id=\"chip3\" class=\"step-chip\">3. Gợi ý chủ đề</span>
-          <span id=\"chip4\" class=\"step-chip\">4. Cấu hình job</span>
+          <span id="chip2" class="step-chip">2. Gợi ý chủ đề</span>
+          <span id="chip3" class="step-chip">3. Chọn nguồn video</span>
+          <span id="chip4" class="step-chip">4. Hoàn thiện job</span>
           <span id=\"chip5\" class=\"step-chip\">5. Theo dõi kết quả</span>
         </div>
 
@@ -348,62 +348,66 @@ def web_home() -> str:
             <span class=\"badge\">3</span>
             <h3>Gợi ý chủ đề</h3>
           </div>
-          <p class=\"hint\">Yêu cầu Agent gợi ý một chủ đề ngắn, cụ thể và dễ triển khai thành video.</p>
-          <div class=\"row\">
+          <p class="hint">Yêu cầu Agent gợi ý một chủ đề ngắn, cụ thể và dễ triển khai thành video.</p>
+          <div class="row">
             <div>
               <label>Mode</label>
-              <select id=\"mode\"><option value=\"sales\">Bán sách</option><option value=\"story\">Kể chuyện</option></select>
+              <select id="mode"><option value="sales">Bán sách</option><option value="story">Kể chuyện</option></select>
+            </div>
+            <div>
+              <label>Ngôn ngữ</label>
+              <input id="language" value="vi" />
+            </div>
+          </div>
+          <button onclick="suggestTopic()">Gợi ý chủ đề</button>
+          <label>Chủ đề</label>
+          <textarea id="topic" rows="3" placeholder="Nhập chủ đề ở đây"></textarea>
             </div>
             <div>
               <label>Ngôn ngữ</label>
               <input id=\"language\" value=\"vi\" />
             </div>
           </div>
-          <button onclick=\"suggestTopic()\">Gợi ý chủ đề</button>
+            <h3>Chọn nguồn video</h3>
           <label>Chủ đề</label>
-          <textarea id=\"topic\" rows=\"3\" placeholder=\"Nhập chủ đề ở đây\"></textarea>
-        </div>
-
-        <div id=\"step4Card\" class=\"card is-disabled\">
-          <div class=\"step-title\">
-            <span class=\"badge\">4</span>
-            <h3>Cấu hình và chạy job</h3>
-          </div>
-          <p class=\"hint\">Thiết lập nguồn video, giọng điệu và thông báo rồi bấm chạy.</p>
-
-          <div class=\"row\">
-            <div>
-              <label>Nguồn video</label>
-              <select id=\"videoSourceType\">
+          <p class="hint">Sau khi có chủ đề, chọn bạn muốn dùng video tự quay hay để Agent tìm video stock trên internet.</p>
+          <label>Nguồn video</label>
+          <select id="videoSourceType" onchange="updateVideoSourceHint()">
+            <option value="self">Tự quay - dùng video của bạn</option>
+            <option value="internet">Internet - tìm clip stock</option>
+          </select>
+          <div id="videoSourceHint" class="status">Nếu chọn tự quay, bước sau bạn sẽ upload video gốc.</div>
+          <button onclick="confirmVideoSource()">Tiếp tục</button>
                 <option value=\"self\">Tự quay - dùng video đã upload</option>
                 <option value=\"internet\">Internet - tìm clip stock</option>
               </select>
             </div>
             <div>
-              <label>Giọng điệu</label>
+            <h3>Hoàn thiện job và chạy</h3>
               <input id=\"tone\" value=\"thân thiện\" />
-            </div>
+          <p class="hint">Hoàn thiện đầu vào theo nguồn video bạn đã chọn, sau đó chạy job.</p>
           </div>
 
           <div class=\"row\">
-            <div>
-              <label>Đường dẫn video nguồn (tự quay)</label>
-              <input id=\"videoPath\" placeholder=\"/app/data/uploads/...\" />
-            </div>
-            <div>
+              <label>Giọng điệu</label>
+              <input id="tone" value="thân thiện" />
               <label>Từ khóa video (internet)</label>
               <input id=\"videoKeyword\" placeholder=\"đọc sách, bàn học, thư viện...\" />
-            </div>
-          </div>
+              <label>Chat ID Telegram</label>
+              <input id="telegramChatId" placeholder="không bắt buộc" />
 
           <div class=\"check-grid\">
             <label class=\"check-item\"><input id=\"createAudio\" type=\"checkbox\" /> Tạo audio</label>
             <label class=\"check-item\"><input id=\"useGemini\" type=\"checkbox\" /> Gemini tinh chỉnh</label>
             <label class=\"check-item\"><input id=\"notifyTelegram\" type=\"checkbox\" checked /> Báo Telegram</label>
+              <label>Tệp video tự quay</label>
+              <input id="videoFile" type="file" accept="video/*" />
+              <button type="button" onclick="uploadVideo()">Upload video tự quay</button>
+              <div id="uploadResult" class="status">Chưa cần upload nếu bạn dùng video internet.</div>
+            </div>
+            <div>
             <label class=\"check-item\">Chat ID Telegram<input id=\"telegramChatId\" placeholder=\"không bắt buộc\" /></label>
           </div>
-
-          <button onclick=\"createJob()\">Chạy job</button>
           <div id=\"jobResult\" class=\"status\">Chưa tạo job.</div>
         </div>
 
@@ -413,7 +417,7 @@ def web_home() -> str:
             <h3>Video đã upload</h3>
           </div>
           <p class=\"hint\">Kiểm tra đường dẫn video để dùng cho nguồn tự quay.</p>
-          <button class=\"secondary\" onclick=\"loadVideos()\">Làm mới danh sách video</button>
+            <label class="check-item"><input id="preserveQuality" type="checkbox" checked disabled /> Giữ chất lượng video</label>
           <pre id=\"videos\"></pre>
         </div>
 
@@ -474,6 +478,35 @@ def web_home() -> str:
           return 5;
         }
 
+        function updateVideoSourceHint() {
+          const sourceType = document.getElementById('videoSourceType').value;
+          const hint = document.getElementById('videoSourceHint');
+          if (sourceType === 'self') {
+            hint.innerText = 'Bạn đã chọn video tự quay. Bước sau sẽ upload video gốc và dùng chính video đó.';
+          } else {
+            hint.innerText = 'Bạn đã chọn video internet. Bước sau chỉ cần nhập từ khóa để Agent tìm clip stock.';
+          }
+        }
+
+        function syncStep4Inputs() {
+          const sourceType = document.getElementById('videoSourceType').value;
+          const uploadInput = document.getElementById('videoFile');
+          const videoPath = document.getElementById('videoPath');
+          const videoKeyword = document.getElementById('videoKeyword');
+
+          if (sourceType === 'self') {
+            uploadInput.disabled = false;
+            videoPath.disabled = false;
+            videoKeyword.disabled = true;
+            videoKeyword.placeholder = 'Không dùng khi chọn video tự quay';
+          } else {
+            uploadInput.disabled = true;
+            videoPath.disabled = true;
+            videoKeyword.disabled = false;
+            videoKeyword.placeholder = 'đọc sách, bàn học, thư viện...';
+          }
+        }
+
       function updateGuide() {
         const completedCount = Object.values(stepState).filter(Boolean).length;
         progressFill.style.width = ((completedCount / 5) * 100) + '%';
@@ -483,13 +516,13 @@ def web_home() -> str:
           agentMessage.innerText = 'Bước 1: lưu token để Agent có quyền gọi API.';
           setStepActive(1);
           } else if (currentStep === 2) {
-          agentMessage.innerText = 'Bước 2: upload video gốc nếu bạn dùng nguồn tự quay.';
+            agentMessage.innerText = 'Bước 2: tạo hoặc nhập chủ đề bạn muốn làm nội dung.';
           setStepActive(2);
           } else if (currentStep === 3) {
-          agentMessage.innerText = 'Bước 3: bấm Gợi ý chủ đề hoặc nhập thủ công.';
+            agentMessage.innerText = 'Bước 3: chọn bạn sẽ dùng video tự quay hay video tìm trên internet.';
           setStepActive(3);
           } else if (currentStep === 4) {
-          agentMessage.innerText = 'Bước 4: cấu hình đầu ra rồi bấm Chạy job.';
+            agentMessage.innerText = 'Bước 4: hoàn thiện đầu vào và bấm Chạy job.';
           setStepActive(4);
         } else {
           agentMessage.innerText = 'Bước 5: theo dõi job và làm mới để xem trạng thái mới nhất.';
@@ -498,7 +531,7 @@ def web_home() -> str:
 
         setCardEnabled('step2Card', stepState[1]);
         setCardEnabled('step3Card', stepState[1]);
-        setCardEnabled('step4Card', stepState[1] && stepState[3]);
+          setCardEnabled('step4Card', stepState[1] && stepState[2] && stepState[3]);
         setCardEnabled('step5aCard', stepState[1]);
         setCardEnabled('step5bCard', stepState[1]);
 
@@ -508,6 +541,7 @@ def web_home() -> str:
           setCardVisible('step4Card', currentStep === 4);
           setCardVisible('step5aCard', currentStep === 5);
           setCardVisible('step5bCard', currentStep === 5);
+          syncStep4Inputs();
       }
 
       function getToken(){ return localStorage.getItem('adminToken') || ''; }
@@ -540,13 +574,12 @@ def web_home() -> str:
           stepState[2] = true;
           document.getElementById('uploadResult').innerText = 'Upload thành công: ' + data.saved_path;
           document.getElementById('videoPath').value = data.saved_path;
-          updateGuide();
           await loadVideos();
         } catch (e) { alert(e.message); }
       }
 
-        function skipUploadStep(){
-          stepState[2] = true;
+      function confirmVideoSource(){
+        stepState[3] = true;
           updateGuide();
         }
 
@@ -558,7 +591,7 @@ def web_home() -> str:
           };
           const data = await api('/web/suggest-topic', { method: 'POST', headers: {'content-type':'application/json'}, body: JSON.stringify(body) });
           document.getElementById('topic').value = data.topic;
-          stepState[3] = true;
+          stepState[2] = true;
           updateGuide();
         } catch (e) { alert(e.message); }
       }
@@ -603,10 +636,11 @@ def web_home() -> str:
       }
 
         document.getElementById('topic').addEventListener('input', (event) => {
-          stepState[3] = Boolean(event.target.value.trim());
+          stepState[2] = Boolean(event.target.value.trim());
           updateGuide();
         });
 
+        updateVideoSourceHint();
       updateGuide();
       loadVideos();
       loadJobs();
