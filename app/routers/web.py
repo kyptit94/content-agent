@@ -312,6 +312,61 @@ def web_home() -> str:
         margin-top: 10px;
       }
 
+      .modal-backdrop {
+        position: fixed;
+        inset: 0;
+        background: rgba(10, 16, 31, 0.58);
+        display: none;
+        align-items: center;
+        justify-content: center;
+        padding: 20px;
+        z-index: 50;
+      }
+
+      .modal-backdrop.open {
+        display: flex;
+      }
+
+      .modal {
+        width: min(860px, 100%);
+        max-height: 90vh;
+        overflow: auto;
+        background: #fff;
+        border-radius: 18px;
+        border: 1px solid #dbe3f2;
+        box-shadow: 0 30px 80px rgba(7, 18, 40, 0.35);
+        padding: 16px;
+      }
+
+      .modal-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+      }
+
+      .modal-title {
+        margin: 0;
+        font-size: 18px;
+        font-weight: 800;
+      }
+
+      .modal-close {
+        width: auto;
+        margin-top: 0;
+        background: #eff3fa;
+        color: #203050;
+        border: 1px solid #d5dfef;
+      }
+
+      .modal-body {
+        margin-top: 12px;
+      }
+
+      .modal-body pre {
+        min-height: 320px;
+      }
+
       .job-error {
         margin-top: 10px;
         color: #9a3412;
@@ -465,6 +520,16 @@ def web_home() -> str:
           <button class="secondary" onclick="loadJobs()">Làm mới danh sách job</button>
           <div id="jobsList" class="jobs-list"></div>
         </div>
+      </div>
+    </div>
+
+    <div id="jobModalBackdrop" class="modal-backdrop" onclick="if (event.target === this) closeJobModal()">
+      <div class="modal">
+        <div class="modal-head">
+          <h3 id="jobModalTitle" class="modal-title">Chi tiết job</h3>
+          <button class="modal-close" onclick="closeJobModal()">Đóng</button>
+        </div>
+        <div id="jobModalBody" class="modal-body"></div>
       </div>
     </div>
 
@@ -634,6 +699,8 @@ def web_home() -> str:
           const retryButton = status === 'failed'
             ? `<button class="secondary" onclick="retryJob('${jobId}')">Chạy lại job</button>`
             : '';
+          const viewButton = `<button class="secondary" onclick="viewJob('${jobId}')">Xem thử</button>`;
+          const deleteButton = `<button class="secondary" onclick="deleteJob('${jobId}')">Xoá</button>`;
 
           return `
             <div class="job-card ${status === 'failed' ? 'failed' : ''}">
@@ -646,11 +713,48 @@ def web_home() -> str:
               </div>
               ${errorBlock}
               <div class="job-actions">
+                ${viewButton}
+                ${deleteButton}
                 ${retryButton}
               </div>
             </div>
           `;
         }).join('');
+      }
+
+      function openJobModal(job) {
+        const backdrop = document.getElementById('jobModalBackdrop');
+        const title = document.getElementById('jobModalTitle');
+        const body = document.getElementById('jobModalBody');
+        title.innerText = `Job ${job.job_id || ''}`;
+        body.innerHTML = `<pre>${escapeHtml(JSON.stringify(job, null, 2))}</pre>`;
+        backdrop.classList.add('open');
+      }
+
+      function closeJobModal() {
+        document.getElementById('jobModalBackdrop').classList.remove('open');
+      }
+
+      async function viewJob(jobId) {
+        try {
+          const data = await api(`/web/jobs/${jobId}`);
+          openJobModal(data);
+        } catch (error) {
+          alert(error.message);
+        }
+      }
+
+      async function deleteJob(jobId) {
+        if (!confirm('Xoá job này khỏi danh sách?')) {
+          return;
+        }
+        try {
+          await api(`/web/jobs/${jobId}`, { method: 'DELETE' });
+          document.getElementById('jobResult').innerText = 'Đã xoá job: ' + jobId;
+          await loadJobs();
+        } catch (error) {
+          alert(error.message);
+        }
       }
 
       async function retryJob(jobId) {
@@ -816,6 +920,13 @@ def create_web_job(body: CreateWebJobRequest, x_admin_token: str | None = Header
 def list_jobs(limit: int = 20, x_admin_token: str | None = Header(default=None)) -> dict:
     _check_token(x_admin_token)
     return {"items": queue.list_recent_jobs(limit=limit)}
+
+
+@router.delete("/jobs/{job_id}")
+def delete_job(job_id: str, x_admin_token: str | None = Header(default=None)) -> dict:
+  _check_token(x_admin_token)
+  queue.delete_job(job_id)
+  return {"job_id": job_id, "status": "deleted"}
 
 
 @router.post("/jobs/{job_id}/retry")

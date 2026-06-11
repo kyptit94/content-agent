@@ -30,6 +30,17 @@ class QueueService:
             return None
         return json.loads(raw)
 
+    def mark_job_deleted(self, job_id: str) -> None:
+        self._client.set(f"job:deleted:{job_id}", "1")
+
+    def is_job_deleted(self, job_id: str) -> bool:
+        return bool(self._client.get(f"job:deleted:{job_id}"))
+
+    def delete_job(self, job_id: str) -> None:
+        self.mark_job_deleted(job_id)
+        self._client.delete(f"job:{job_id}")
+        self._client.lrem("jobs:recent", 0, job_id)
+
     def list_recent_jobs(self, limit: int = 30) -> list[dict]:
         job_ids = self._client.lrange("jobs:recent", 0, max(0, limit - 1))
         jobs: list[dict] = []

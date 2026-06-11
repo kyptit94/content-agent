@@ -28,6 +28,8 @@ def main() -> None:
             continue
 
         job_id = payload["job_id"]
+        if queue.is_job_deleted(job_id):
+            continue
         mode = payload["mode"]
         topic = payload["topic"]
         language = payload["language"]
