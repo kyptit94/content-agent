@@ -41,11 +41,24 @@ class QueueService:
         self._client.delete(f"job:{job_id}")
         self._client.lrem("jobs:recent", 0, job_id)
 
+    def get_queue_position(self, job_id: str) -> int | None:
+        items = self._client.lrange(self._queue_name, 0, -1)
+        for index, raw_item in enumerate(items, start=1):
+            try:
+                payload = json.loads(raw_item)
+            except Exception:
+                continue
+            if payload.get("job_id") == job_id:
+                return index
+        return None
+
     def list_recent_jobs(self, limit: int = 30) -> list[dict]:
         job_ids = self._client.lrange("jobs:recent", 0, max(0, limit - 1))
         jobs: list[dict] = []
         for job_id in job_ids:
             item = self.get_job_status(job_id)
             if item:
+                if item.get("status") == "queued":
+                    item["queue_position"] = self.get_queue_position(job_id)
                 jobs.append(item)
         return jobs

@@ -317,6 +317,28 @@ def web_home() -> str:
         margin-top: 10px;
       }
 
+      .mini-progress {
+        margin-top: 10px;
+      }
+
+      .mini-progress-bar {
+        height: 8px;
+        border-radius: 999px;
+        background: #e4ebf7;
+        overflow: hidden;
+      }
+
+      .mini-progress-fill {
+        height: 100%;
+        background: linear-gradient(120deg, var(--accent), #149688);
+      }
+
+      .mini-progress-label {
+        margin-top: 6px;
+        color: var(--muted);
+        font-size: 12px;
+      }
+
       .modal-backdrop {
         position: fixed;
         inset: 0;
@@ -866,14 +888,26 @@ def web_home() -> str:
           failed: 'Thất bại',
         };
 
+        const stageLabels = {
+          generating_content: 'Đang viết nội dung',
+          generating_audio: 'Đang tạo audio',
+          preparing_video: 'Đang chuẩn bị video',
+          composing_video: 'Đang ghép video và audio',
+          publishing: 'Đang publish',
+          completed: 'Đã hoàn tất',
+        };
+
         container.innerHTML = items.map((item) => {
           const status = item.status || 'unknown';
           const title = escapeHtml(item.topic || 'Không có chủ đề');
           const jobId = escapeHtml(item.job_id || '');
+          const stageLabel = escapeHtml(stageLabels[item.current_stage] || item.stage_detail || '');
+          const progressPercent = Number(item.progress_percent || 0);
           const metaLines = [
             `Mã job: ${jobId}`,
             `Trạng thái: ${escapeHtml(statusLabels[status] || status)}`,
             `Loại nội dung: ${escapeHtml(item.mode || '')}`,
+            item.queue_position ? `Vị trí hàng đợi: ${escapeHtml(String(item.queue_position))}` : '',
             item.created_at ? `Tạo lúc: ${escapeHtml(item.created_at)}` : '',
             item.started_at ? `Bắt đầu: ${escapeHtml(item.started_at)}` : '',
             item.completed_at ? `Hoàn tất: ${escapeHtml(item.completed_at)}` : '',
@@ -881,6 +915,16 @@ def web_home() -> str:
           ].filter(Boolean).join('<br/>');
 
           const errorBlock = item.error ? `<div class="job-error">${escapeHtml(item.error)}</div>` : '';
+          const progressBlock = status === 'running' || status === 'completed'
+            ? `
+              <div class="mini-progress">
+                <div class="mini-progress-bar"><div class="mini-progress-fill" style="width:${Math.max(0, Math.min(progressPercent, 100))}%"></div></div>
+                <div class="mini-progress-label">${stageLabel || 'Đang xử lý'}${progressPercent ? ` • ${progressPercent}%` : ''}</div>
+              </div>
+            `
+            : status === 'queued' && item.queue_position
+              ? `<div class="mini-progress-label">Job đang chờ xử lý. Hiện đứng thứ ${escapeHtml(String(item.queue_position))} trong hàng đợi.</div>`
+              : '';
           const retryButton = status === 'failed'
             ? `<button class="secondary" onclick="retryJob('${jobId}')">Chạy lại job</button>`
             : '';
@@ -896,6 +940,7 @@ def web_home() -> str:
                 </div>
                 <div class="status">${escapeHtml(statusLabels[status] || status)}</div>
               </div>
+              ${progressBlock}
               ${errorBlock}
               <div class="job-actions">
                 ${viewButton}

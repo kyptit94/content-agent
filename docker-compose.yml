@@ -73,6 +73,7 @@ services:
       - .env
     environment:
       - COQUI_MODEL_NAME=tts_models/multilingual/multi-dataset/xtts_v2
+      - COQUI_TOS_AGREED=1
       - VOICE_SAMPLE_DIR=/app/data/voices
       - VOICE_OUTPUT_DIR=/app/data/outputs
     volumes:

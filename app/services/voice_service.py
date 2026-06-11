@@ -1,7 +1,6 @@
 import asyncio
 from pathlib import Path
 
-import edge_tts
 import requests
 
 from app.config import settings
@@ -31,6 +30,8 @@ class VoiceService:
         output_path = self.output_dir / output_name
 
         async def _run() -> None:
+            import edge_tts
+
             communicate = edge_tts.Communicate(
                 text=text,
                 voice=voice_name or settings.edge_tts_voice,

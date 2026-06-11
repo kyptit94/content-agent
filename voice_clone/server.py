@@ -7,6 +7,7 @@ from TTS.api import TTS
 
 app = FastAPI(title="Voice Clone Service", version="1.0.0")
 
+os.environ.setdefault("COQUI_TOS_AGREED", "1")
 MODEL_NAME = os.getenv("COQUI_MODEL_NAME", "tts_models/multilingual/multi-dataset/xtts_v2")
 OUTPUT_DIR = Path(os.getenv("VOICE_OUTPUT_DIR", "/app/data/outputs"))
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)

@@ -47,19 +47,26 @@ def main() -> None:
         revision_of_job_id = payload.get("revision_of_job_id")
         notify_telegram = bool(payload.get("notify_telegram", False))
         notify_chat_id = payload.get("telegram_chat_id") or settings.telegram_chat_id
-        queue.set_job_status(
-            job_id=job_id,
-            payload={
-                "job_id": job_id,
-                "status": "running",
-                "mode": mode,
-                "topic": topic,
-                "feedback_round": feedback_round,
-                "revision_of_job_id": revision_of_job_id,
-                "started_at": datetime.utcnow().isoformat(),
-                "payload": payload,
-            },
-        )
+
+        def set_running_status(stage: str, percent: int, detail: str) -> None:
+            queue.set_job_status(
+                job_id=job_id,
+                payload={
+                    "job_id": job_id,
+                    "status": "running",
+                    "mode": mode,
+                    "topic": topic,
+                    "feedback_round": feedback_round,
+                    "revision_of_job_id": revision_of_job_id,
+                    "started_at": datetime.utcnow().isoformat(),
+                    "current_stage": stage,
+                    "progress_percent": percent,
+                    "stage_detail": detail,
+                    "payload": payload,
+                },
+            )
+
+        set_running_status(stage="generating_content", percent=10, detail="Đang viết nội dung")
 
         try:
             content = llm.generate(
@@ -74,6 +81,7 @@ def main() -> None:
 
             audio_path = ""
             if create_audio:
+                set_running_status(stage="generating_audio", percent=45, detail="Đang tạo audio")
                 if voice_sample:
                     audio_path = voice.synthesize(
                         text=content[:2200],
@@ -91,6 +99,7 @@ def main() -> None:
             video_path = ""
             video_source = ""
             if create_video:
+                set_running_status(stage="preparing_video", percent=65, detail="Đang chuẩn bị video")
                 source_path = ""
                 if video_source_type == "internet":
                     clip_path, clip_source = stock_video.fetch(
@@ -116,6 +125,7 @@ def main() -> None:
                 ):
                     video_path = source_path
                 else:
+                    set_running_status(stage="composing_video", percent=82, detail="Đang ghép video và audio")
                     video_path = composer.compose(
                         job_id=job_id,
                         source_video_path=source_path,
@@ -127,6 +137,7 @@ def main() -> None:
 
             publish_results: list[str] = []
             if video_path and settings.auto_publish_enabled:
+                set_running_status(stage="publishing", percent=92, detail="Đang đẩy video đi publish")
                 publish_description = (
                     f"{topic}\n\n"
                     f"{content[:800]}\n\n"
@@ -149,6 +160,9 @@ def main() -> None:
                     "feedback_round": feedback_round,
                     "revision_of_job_id": revision_of_job_id,
                     "completed_at": datetime.utcnow().isoformat(),
+                    "current_stage": "completed",
+                    "progress_percent": 100,
+                    "stage_detail": "Đã hoàn tất",
                     "outputs": {
                         "markdown_path": markdown_path,
                         "audio_path": audio_path or None,
