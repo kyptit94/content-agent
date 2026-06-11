@@ -3,6 +3,9 @@ FROM nvidia/cuda:12.1.1-cudnn8-runtime-ubuntu22.04
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
+ENV PIP_DEFAULT_TIMEOUT=120
+ENV PIP_RETRIES=10
+ENV PIP_DISABLE_PIP_VERSION_CHECK=1
 
 WORKDIR /app
 
@@ -16,7 +19,26 @@ RUN apt-get update \
 
 COPY requirements-voice.txt ./requirements-voice.txt
 RUN pip3 install --upgrade pip setuptools wheel 
-RUN pip3 install --no-cache-dir -r requirements-voice.txt
+RUN pip3 install --no-cache-dir --index-url https://download.pytorch.org/whl/cpu \
+    torch==2.5.1+cpu torchaudio==2.5.1+cpu
+RUN python3 - <<'PY'
+from pathlib import Path
+
+source = Path("requirements-voice.txt")
+target = Path("requirements-voice-runtime.txt")
+
+filtered_lines = []
+for line in source.read_text().splitlines():
+    stripped = line.strip()
+    if not stripped or stripped.startswith("#"):
+        continue
+    if stripped.startswith("torch==") or stripped.startswith("torchaudio=="):
+        continue
+    filtered_lines.append(line)
+
+target.write_text("\n".join(filtered_lines) + "\n")
+PY
+RUN pip3 install --no-cache-dir -r requirements-voice-runtime.txt
 
 COPY voice_clone ./voice_clone
 
