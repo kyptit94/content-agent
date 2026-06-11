@@ -1,7 +1,7 @@
 import hashlib
 import random
-
 import requests
+
 from redis import Redis
 
 from app.config import settings
@@ -96,6 +96,28 @@ class LLMService:
         )
         response.raise_for_status()
         return response.json().get("response", "").strip()
+
+    def _build_local_generation(self, mode: str, topic: str, tone: str, language: str, feedback_note: str | None) -> str:
+        if mode == "story":
+            lines = [
+                f"Mo bai: {topic}.",
+                f"Than bai: Ke cau chuyen theo giong {tone}, tap trung vao xung dot va cam xuc ro rang.",
+                "Cao trao: day lanh chuyen bien bat ngo nhung van giu dung y nghia ban dau.",
+                "Ket: dong lai bang 1 cau nhan thuc hoac bai hoc de nguoi xem nho lau hon.",
+            ]
+        else:
+            lines = [
+                f"Hook: {topic}.",
+                f"Van de: Neu ban con do du hay bo lo viec doc sach, day la phan ban can nghe.",
+                f"Loi ich: Cach tiep can nay giup ban duy tri thoi quen doc deu hon voi giong van {tone}.",
+                "CTA: Thu ngay hom nay voi 10 phut doc sach truoc khi ngu.",
+            ]
+
+        if feedback_note:
+            lines.append(f"Dieu chinh: {feedback_note}")
+
+        lines.append(f"Ngon ngu: {language}")
+        return "\n".join(lines)
 
     def _call_gemini(self, prompt: str) -> str:
         if not settings.gemini_api_key:
@@ -193,7 +215,27 @@ class LLMService:
                 f"{feedback_note}"
             )
 
-        local_output = self._call_ollama(local_prompt)
+        try:
+            local_output = self._call_ollama(local_prompt)
+        except requests.HTTPError as exc:
+            if getattr(exc.response, "status_code", None) == 404:
+                local_output = self._build_local_generation(
+                    mode=mode,
+                    topic=topic,
+                    tone=tone,
+                    language=language,
+                    feedback_note=feedback_note,
+                )
+            else:
+                raise
+        except Exception:
+            local_output = self._build_local_generation(
+                mode=mode,
+                topic=topic,
+                tone=tone,
+                language=language,
+                feedback_note=feedback_note,
+            )
 
         if not use_gemini_refine or not settings.gemini_api_key:
             return local_output
