@@ -562,22 +562,6 @@ def web_home() -> str:
         return await res.json();
       }
 
-      async function uploadVideo(){
-        try {
-          const fileInput = document.getElementById('videoFile');
-          if (!fileInput.files.length) return;
-          const fd = new FormData();
-          fd.append('file', fileInput.files[0]);
-          const out = await fetch('/web/upload', { method: 'POST', headers: {'x-admin-token': getToken()}, body: fd });
-          const data = await out.json();
-          if (!out.ok) throw new Error(JSON.stringify(data));
-          stepState[2] = true;
-          document.getElementById('uploadResult').innerText = 'Upload thành công: ' + data.saved_path;
-          document.getElementById('videoPath').value = data.saved_path;
-          await loadVideos();
-        } catch (e) { alert(e.message); }
-      }
-
       function confirmVideoSource(){
         stepState[3] = true;
           updateGuide();
@@ -621,13 +605,6 @@ def web_home() -> str:
         } catch (e) { alert(e.message); }
       }
 
-      async function loadVideos(){
-        try {
-          const data = await api('/web/videos');
-          document.getElementById('videos').innerText = JSON.stringify(data, null, 2);
-        } catch (e) { alert(e.message); }
-      }
-
       async function loadJobs(){
         try {
           const data = await api('/web/jobs?limit=20');
@@ -642,50 +619,11 @@ def web_home() -> str:
 
         updateVideoSourceHint();
       updateGuide();
-      loadVideos();
       loadJobs();
     </script>
   </body>
 </html>
 """
-
-
-@router.post("/upload")
-def upload_video(file: UploadFile = File(...), x_admin_token: str | None = Header(default=None)) -> dict:
-    _check_token(x_admin_token)
-
-    suffix = Path(file.filename or "upload.mp4").suffix.lower()
-    if suffix not in {".mp4", ".mov", ".mkv", ".webm"}:
-        raise HTTPException(status_code=400, detail="Unsupported video format")
-
-    upload_root = Path(settings.ingest_dir)
-    upload_root.mkdir(parents=True, exist_ok=True)
-    target = upload_root / f"{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}_{Path(file.filename or 'video.mp4').name}"
-
-    with target.open("wb") as output:
-        output.write(file.file.read())
-
-    return {"saved_path": str(target)}
-
-
-@router.get("/videos")
-def list_videos(x_admin_token: str | None = Header(default=None)) -> dict:
-    _check_token(x_admin_token)
-
-    upload_root = Path(settings.ingest_dir)
-    upload_root.mkdir(parents=True, exist_ok=True)
-    items = []
-    for path in sorted(upload_root.glob("*"), key=lambda p: p.stat().st_mtime, reverse=True):
-        if not path.is_file():
-            continue
-        items.append(
-            {
-                "path": str(path),
-                "size_mb": round(path.stat().st_size / 1024 / 1024, 2),
-                "modified_at": datetime.utcfromtimestamp(path.stat().st_mtime).isoformat(),
-            }
-        )
-    return {"videos": items}
 
 
 @router.post("/suggest-topic")
