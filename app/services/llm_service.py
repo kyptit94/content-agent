@@ -1,4 +1,5 @@
 import hashlib
+import random
 
 import requests
 from redis import Redis
@@ -26,6 +27,34 @@ class LLMService:
             self.redis.setex(key, ttl, value)
         except Exception:
             return
+
+    def _recent_topics_key(self, mode: str, language: str) -> str:
+        return f"topic_suggestions:recent:{mode}:{language}"
+
+    def _recent_topics_get(self, mode: str, language: str, limit: int = 8) -> list[str]:
+        try:
+            items = self.redis.lrange(self._recent_topics_key(mode, language), 0, max(0, limit - 1))
+            return [item.strip() for item in items if item and item.strip()]
+        except Exception:
+            return []
+
+    def _recent_topics_push(self, mode: str, language: str, topic: str) -> None:
+        cleaned = topic.strip()
+        if not cleaned:
+            return
+
+        key = self._recent_topics_key(mode, language)
+        try:
+            self.redis.lrem(key, 0, cleaned)
+            self.redis.lpush(key, cleaned)
+            self.redis.ltrim(key, 0, 7)
+            self.redis.expire(key, 60 * 60 * 24 * 7)
+        except Exception:
+            return
+
+    @staticmethod
+    def _normalize_topic_line(value: str) -> str:
+        return value.splitlines()[0].strip().strip("-•1234567890. ")[:180]
 
     @staticmethod
     def _is_risky_topic(topic: str) -> bool:
@@ -193,20 +222,55 @@ class LLMService:
             return local_output
 
     def suggest_topic(self, mode: str, language: str = "vi") -> str:
+        recent_topics = self._recent_topics_get(mode=mode, language=language)
+        avoid_block = ""
+        if recent_topics:
+            avoid_block = "\nKhong duoc lap lai hoac qua giong cac chu de sau: " + " | ".join(recent_topics)
+
         prompt = (
             "De xuat DUY NHAT 1 chu de video ngan, viet 1 dong duy nhat, khong danh sach. "
-            "Chu de phai cu the, de lam noi dung ngan 30-60s."
+            "Chu de phai cu the, de lam noi dung ngan 30-60s. "
+            "Moi lan phai doi goc tiep can, khong lap lai mot mo-tip cu."
             f"\nMode: {mode}; Language: {language}"
+            f"{avoid_block}"
         )
         try:
             result = self._call_ollama(prompt)
-            line = result.splitlines()[0].strip() if result else ""
-            return line.strip("-•1234567890. ")[:180] or self._fallback_topic(mode)
+            line = self._normalize_topic_line(result) if result else ""
+            topic = line or self._fallback_topic(mode=mode, language=language, recent_topics=recent_topics)
+            self._recent_topics_push(mode=mode, language=language, topic=topic)
+            return topic
         except Exception:
-            return self._fallback_topic(mode)
+            topic = self._fallback_topic(mode=mode, language=language, recent_topics=recent_topics)
+            self._recent_topics_push(mode=mode, language=language, topic=topic)
+            return topic
 
     @staticmethod
-    def _fallback_topic(mode: str) -> str:
+    def _fallback_topic(mode: str, language: str = "vi", recent_topics: list[str] | None = None) -> str:
+        recent_topics = recent_topics or []
         if mode == "story":
-            return "Nguoi ban sach cu duoi con mua va la thu khong nguoi nhan"
-        return "3 loi ich bat ngo cua viec doc 10 phut moi ngay"
+            candidates = [
+                "Cuon sach cu trong tiem do ve mo ra mot loi hua bi mat",
+                "Co gai de quen mot tam buu thiep trong sach thu vien va 7 nam sau co nguoi hoi am",
+                "Nguoi ban sach ven duong gap lai vi khach cu mang theo mot bi mat gia dinh",
+                "Mot trang sach rot ra trong ngay mua dan toi cuoc gap doi doi",
+            ]
+        elif language.lower().startswith("vi"):
+            candidates = [
+                "Vi sao 10 phut doc sach truoc khi ngu co the doi cach ban nghi ca ngay hom sau",
+                "3 dau hieu ban dang chon sai cuon sach cho muc tieu phat trien ban than",
+                "Cach doc 1 chuong sach ma van nho duoc y chinh de ap dung ngay",
+                "1 thoi quen nho giup ban doc deu hon ma khong can ep ban than",
+                "Tai sao nguoi ban ron van co the doc het 12 cuon sach moi nam",
+            ]
+        else:
+            candidates = [
+                "Why reading 10 minutes before bed can change your next day focus",
+                "3 signs you are picking the wrong book for your current goal",
+                "A simple way to remember more from every chapter you read",
+                "One tiny reading habit that busy people can actually keep",
+            ]
+
+        available = [candidate for candidate in candidates if candidate not in recent_topics]
+        pool = available or candidates
+        return random.choice(pool)
