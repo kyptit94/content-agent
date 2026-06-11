@@ -74,6 +74,8 @@ services:
     environment:
       - COQUI_MODEL_NAME=tts_models/multilingual/multi-dataset/xtts_v2
       - COQUI_TOS_AGREED=1
+      - EDGE_TTS_VOICE=vi-VN-HoaiMyNeural
+      - EDGE_TTS_RATE=+0%
       - VOICE_SAMPLE_DIR=/app/data/voices
       - VOICE_OUTPUT_DIR=/app/data/outputs
     volumes:

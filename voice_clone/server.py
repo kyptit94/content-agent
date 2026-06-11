@@ -22,6 +22,8 @@ _tts_engine: TTS | None = None
 
 os.environ.setdefault("COQUI_TOS_AGREED", "1")
 MODEL_NAME = os.getenv("COQUI_MODEL_NAME", "tts_models/multilingual/multi-dataset/xtts_v2")
+EDGE_TTS_VOICE = os.getenv("EDGE_TTS_VOICE", "vi-VN-HoaiMyNeural")
+EDGE_TTS_RATE = os.getenv("EDGE_TTS_RATE", "+0%")
 OUTPUT_DIR = Path(os.getenv("VOICE_OUTPUT_DIR", "/app/data/outputs"))
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 VOICE_SAMPLE_DIR = Path(os.getenv("VOICE_SAMPLE_DIR", "/app/data/voices"))
@@ -93,10 +95,41 @@ def synthesize(payload: SynthesizePayload) -> dict:
         raise HTTPException(status_code=503, detail=f"voice model unavailable: {exc}") from exc
 
     output_path = OUTPUT_DIR / payload.output_name
-    tts_engine.tts_to_file(
-        text=payload.text,
-        speaker_wav=payload.speaker_wav,
-        language=payload.language,
-        file_path=str(output_path),
-    )
+
+    try:
+        tts_engine.tts_to_file(
+            text=payload.text,
+            speaker_wav=payload.speaker_wav,
+            language=payload.language,
+            file_path=str(output_path),
+        )
+    except AssertionError as exc:
+        if "Language" not in str(exc) and "supported" not in str(exc):
+            raise
+
+        logger.warning(
+            "XTTS does not support language %s, falling back to Edge TTS voice %s",
+            payload.language,
+            EDGE_TTS_VOICE,
+        )
+
+        try:
+            import asyncio
+            import edge_tts
+
+            async def _run() -> None:
+                communicate = edge_tts.Communicate(
+                    text=payload.text,
+                    voice=EDGE_TTS_VOICE,
+                    rate=EDGE_TTS_RATE,
+                )
+                await communicate.save(str(output_path))
+
+            asyncio.run(_run())
+        except Exception as fallback_exc:
+            raise HTTPException(
+                status_code=500,
+                detail=f"XTTS failed and Edge TTS fallback failed: {fallback_exc}",
+            ) from fallback_exc
+
     return {"audio_path": str(output_path)}

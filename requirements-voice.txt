@@ -6,3 +6,4 @@ torchaudio==2.5.1
 TTS==0.22.0
 transformers==4.41.2
 soundfile==0.13.1
+edge-tts==6.1.12

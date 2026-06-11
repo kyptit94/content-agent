@@ -86,13 +86,26 @@ def main() -> None:
             audio_error = ""
             if create_audio:
                 set_running_status(stage="generating_audio", percent=45, detail="Đang tạo audio")
-                if voice_sample:
-                    audio_path = voice.synthesize(
-                        text=content[:2200],
-                        language=language,
-                        speaker_wav=f"/app/data/voices/{voice_sample}",
-                        output_name=f"{job_id}.wav",
-                    )
+                is_vietnamese = language.lower().startswith("vi")
+                if voice_sample and not is_vietnamese:
+                    try:
+                        audio_path = voice.synthesize(
+                            text=content[:2200],
+                            language=language,
+                            speaker_wav=f"/app/data/voices/{voice_sample}",
+                            output_name=f"{job_id}.wav",
+                        )
+                    except Exception as audio_exc:
+                        audio_error = str(audio_exc)
+                        try:
+                            audio_path, srt_content = voice.synthesize_edge_with_subs(
+                                text=content[:2200],
+                                output_name=f"{job_id}.mp3",
+                                voice_name=edge_tts_voice,
+                            )
+                        except Exception as fallback_exc:
+                            audio_error = f"{audio_error} | edge_fallback: {fallback_exc}"
+                            audio_path = ""
                 else:
                     try:
                         audio_path, srt_content = voice.synthesize_edge_with_subs(
