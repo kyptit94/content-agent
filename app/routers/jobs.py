@@ -30,6 +30,7 @@ def create_job(job: JobRequest) -> JobAccepted:
             "topic": payload.topic,
             "mode": payload.mode,
             "queued_at": datetime.utcnow().isoformat(),
+            "payload": payload.model_dump(),
         },
     )
 

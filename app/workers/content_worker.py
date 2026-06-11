@@ -54,6 +54,7 @@ def main() -> None:
                 "feedback_round": feedback_round,
                 "revision_of_job_id": revision_of_job_id,
                 "started_at": datetime.utcnow().isoformat(),
+                "payload": payload,
             },
         )
 
@@ -145,6 +146,7 @@ def main() -> None:
                         "video_source": video_source or None,
                     },
                     "auto_publish": publish_results,
+                    "payload": payload,
                 },
             )
 
@@ -168,6 +170,7 @@ def main() -> None:
                     "topic": topic,
                     "failed_at": datetime.utcnow().isoformat(),
                     "error": str(exc),
+                    "payload": payload,
                 },
             )
             if notify_telegram and notify_chat_id and telegram.enabled:

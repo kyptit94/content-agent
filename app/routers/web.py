@@ -269,6 +269,60 @@ def web_home() -> str:
         word-break: break-word;
       }
 
+      .jobs-list {
+        display: grid;
+        gap: 12px;
+      }
+
+      .job-card {
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        background: #f8fbff;
+        padding: 12px;
+      }
+
+      .job-card.failed {
+        background: #fff7f7;
+        border-color: #ffd7d7;
+      }
+
+      .job-head {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        align-items: start;
+      }
+
+      .job-title {
+        font-weight: 700;
+        margin: 0;
+      }
+
+      .job-meta {
+        margin-top: 6px;
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.55;
+      }
+
+      .job-actions {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        margin-top: 10px;
+      }
+
+      .job-error {
+        margin-top: 10px;
+        color: #9a3412;
+        background: #fff1ea;
+        border: 1px solid #ffd7c2;
+        border-radius: 10px;
+        padding: 8px 10px;
+        font-size: 12px;
+        white-space: pre-wrap;
+      }
+
       pre {
         margin: 0;
         background: #0f172a;
@@ -409,7 +463,7 @@ def web_home() -> str:
           </div>
           <p class="hint">Theo dõi trạng thái đang chờ, đang chạy, hoàn tất hoặc thất bại.</p>
           <button class="secondary" onclick="loadJobs()">Làm mới danh sách job</button>
-          <pre id="jobs"></pre>
+          <div id="jobsList" class="jobs-list"></div>
         </div>
       </div>
     </div>
@@ -528,6 +582,15 @@ def web_home() -> str:
         alert('Token đã được lưu');
       }
 
+      function escapeHtml(value) {
+        return String(value)
+          .replaceAll('&', '&amp;')
+          .replaceAll('<', '&lt;')
+          .replaceAll('>', '&gt;')
+          .replaceAll('"', '&quot;')
+          .replaceAll("'", '&#39;');
+      }
+
       async function api(url, options = {}) {
         const headers = options.headers || {};
         headers['x-admin-token'] = getToken();
@@ -537,6 +600,69 @@ def web_home() -> str:
           throw new Error(await response.text());
         }
         return await response.json();
+      }
+
+      function renderJobs(items) {
+        const container = document.getElementById('jobsList');
+        if (!items.length) {
+          container.innerHTML = '<div class="status">Chưa có job nào.</div>';
+          return;
+        }
+
+        const statusLabels = {
+          queued: 'Đang chờ',
+          running: 'Đang chạy',
+          completed: 'Hoàn tất',
+          failed: 'Thất bại',
+        };
+
+        container.innerHTML = items.map((item) => {
+          const status = item.status || 'unknown';
+          const title = escapeHtml(item.topic || 'Không có chủ đề');
+          const jobId = escapeHtml(item.job_id || '');
+          const metaLines = [
+            `Mã job: ${jobId}`,
+            `Trạng thái: ${escapeHtml(statusLabels[status] || status)}`,
+            `Loại nội dung: ${escapeHtml(item.mode || '')}`,
+            item.created_at ? `Tạo lúc: ${escapeHtml(item.created_at)}` : '',
+            item.started_at ? `Bắt đầu: ${escapeHtml(item.started_at)}` : '',
+            item.completed_at ? `Hoàn tất: ${escapeHtml(item.completed_at)}` : '',
+            item.failed_at ? `Thất bại: ${escapeHtml(item.failed_at)}` : '',
+          ].filter(Boolean).join('<br/>');
+
+          const errorBlock = item.error ? `<div class="job-error">${escapeHtml(item.error)}</div>` : '';
+          const retryButton = status === 'failed'
+            ? `<button class="secondary" onclick="retryJob('${jobId}')">Chạy lại job</button>`
+            : '';
+
+          return `
+            <div class="job-card ${status === 'failed' ? 'failed' : ''}">
+              <div class="job-head">
+                <div>
+                  <p class="job-title">${title}</p>
+                  <div class="job-meta">${metaLines}</div>
+                </div>
+                <div class="status">${escapeHtml(statusLabels[status] || status)}</div>
+              </div>
+              ${errorBlock}
+              <div class="job-actions">
+                ${retryButton}
+              </div>
+            </div>
+          `;
+        }).join('');
+      }
+
+      async function retryJob(jobId) {
+        try {
+          const data = await api(`/web/jobs/${jobId}/retry`, {
+            method: 'POST',
+          });
+          document.getElementById('jobResult').innerText = 'Đã chạy lại job mới: ' + data.job_id;
+          await loadJobs();
+        } catch (error) {
+          alert(error.message);
+        }
       }
 
       async function suggestTopic() {
@@ -618,7 +744,7 @@ def web_home() -> str:
       async function loadJobs() {
         try {
           const data = await api('/web/jobs?limit=20');
-          document.getElementById('jobs').innerText = JSON.stringify(data, null, 2);
+          renderJobs(data.items || []);
         } catch (error) {
           alert(error.message);
         }
@@ -680,6 +806,7 @@ def create_web_job(body: CreateWebJobRequest, x_admin_token: str | None = Header
             "topic": body.topic,
             "mode": mode,
             "queued_at": datetime.utcnow().isoformat(),
+        "payload": payload.model_dump(),
         },
     )
     return {"job_id": job_id, "status": "queued"}
@@ -689,6 +816,58 @@ def create_web_job(body: CreateWebJobRequest, x_admin_token: str | None = Header
 def list_jobs(limit: int = 20, x_admin_token: str | None = Header(default=None)) -> dict:
     _check_token(x_admin_token)
     return {"items": queue.list_recent_jobs(limit=limit)}
+
+
+@router.post("/jobs/{job_id}/retry")
+def retry_job(job_id: str, x_admin_token: str | None = Header(default=None)) -> dict:
+  _check_token(x_admin_token)
+
+  item = queue.get_job_status(job_id)
+  if not item:
+    raise HTTPException(status_code=404, detail="job not found")
+
+  original_payload = item.get("payload") or {}
+  if not isinstance(original_payload, dict):
+    original_payload = {}
+
+  if not original_payload:
+    original_payload = {
+      "mode": item.get("mode", "sales"),
+      "topic": item.get("topic", ""),
+      "language": item.get("language", "vi"),
+      "tone": item.get("tone", "friendly"),
+      "use_gemini_refine": item.get("use_gemini_refine", False),
+      "create_audio": item.get("create_audio", False),
+      "create_video": item.get("create_video", True),
+      "video_source_type": item.get("video_source_type", "self"),
+      "video_keyword": item.get("video_keyword"),
+      "user_video_path": item.get("user_video_path"),
+      "voice_sample_filename": item.get("voice_sample_filename"),
+      "notify_telegram": item.get("notify_telegram", True),
+      "telegram_chat_id": item.get("telegram_chat_id"),
+    }
+
+  retry_payload = dict(original_payload)
+  retry_payload["job_id"] = str(uuid4())
+  retry_payload["created_at"] = datetime.utcnow().isoformat()
+  retry_payload["revision_of_job_id"] = job_id
+  retry_payload["feedback_round"] = int(item.get("feedback_round", 0)) + 1
+
+  queue.enqueue(retry_payload)
+  queue.set_job_status(
+    job_id=retry_payload["job_id"],
+    payload={
+      "job_id": retry_payload["job_id"],
+      "status": "queued",
+      "topic": retry_payload.get("topic"),
+      "mode": retry_payload.get("mode"),
+      "queued_at": datetime.utcnow().isoformat(),
+      "revision_of_job_id": job_id,
+      "feedback_round": retry_payload["feedback_round"],
+      "payload": retry_payload,
+    },
+  )
+  return {"job_id": retry_payload["job_id"], "status": "queued"}
 
 
 @router.get("/jobs/{job_id}")
