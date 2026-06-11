@@ -30,6 +30,7 @@ class VoiceService:
         }
 
         last_error: Exception | None = None
+        self._wait_for_service_ready()
         for base_url in self._candidate_base_urls():
             try:
                 response = requests.post(
@@ -45,6 +46,28 @@ class VoiceService:
         if last_error:
             raise last_error
         return ""
+
+    def _wait_for_service_ready(self) -> None:
+        health_url = f"{self.base_url}/health"
+        deadline = time.time() + 900
+        delay = 2.0
+
+        while time.time() < deadline:
+            try:
+                response = requests.get(health_url, timeout=10)
+                if response.ok:
+                    payload = response.json()
+                    if payload.get("ready") is True or payload.get("status") == "ok":
+                        return
+                    if payload.get("status") == "failed":
+                        raise RuntimeError(f"voice service failed to start: {payload.get('error', 'unknown error')}")
+            except requests.exceptions.RequestException:
+                pass
+
+            time.sleep(delay)
+            delay = min(delay * 1.5, 15.0)
+
+        raise RuntimeError(f"voice service not ready after waiting for {health_url}")
 
     def _candidate_base_urls(self) -> list[str]:
         urls = [self.base_url]
