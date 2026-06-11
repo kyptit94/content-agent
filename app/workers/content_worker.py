@@ -1,3 +1,4 @@
+import subprocess
 from pathlib import Path
 from datetime import datetime
 
@@ -84,38 +85,58 @@ def main() -> None:
             audio_path = ""
             srt_content = ""
             audio_error = ""
+            audio_duration_sec = None
             if create_audio:
                 set_running_status(stage="generating_audio", percent=45, detail="Đang tạo audio")
-                is_vietnamese = language.lower().startswith("vi")
-                if voice_sample and not is_vietnamese:
+                # Truncate content if too long for TTS (safety limit)
+                tts_text = content[:5000]
+
+                # Determine which TTS engine to use
+                use_xtts = bool(voice_sample)  # if user has voice sample, try XTTS first
+                use_edge = True  # always fallback to edge-tts
+
+                if use_xtts:
                     try:
                         audio_path = voice.synthesize(
-                            text=content[:2200],
+                            text=tts_text,
                             language=language,
                             speaker_wav=f"/app/data/voices/{voice_sample}",
                             output_name=f"{job_id}.wav",
                         )
                     except Exception as audio_exc:
                         audio_error = str(audio_exc)
-                        try:
-                            audio_path, srt_content = voice.synthesize_edge_with_subs(
-                                text=content[:2200],
-                                output_name=f"{job_id}.mp3",
-                                voice_name=edge_tts_voice,
-                            )
-                        except Exception as fallback_exc:
-                            audio_error = f"{audio_error} | edge_fallback: {fallback_exc}"
-                            audio_path = ""
-                else:
+                        audio_path = ""
+
+                if not audio_path:
+                    # Fallback to edge-tts (with or without voice sample)
                     try:
                         audio_path, srt_content = voice.synthesize_edge_with_subs(
-                            text=content[:2200],
+                            text=tts_text,
                             output_name=f"{job_id}.mp3",
                             voice_name=edge_tts_voice,
                         )
                     except Exception as audio_exc:
-                        audio_error = str(audio_exc)
+                        audio_error = f"{audio_error} | edge_tts: {audio_exc}" if audio_error else str(audio_exc)
                         audio_path = ""
+
+                # Compute audio duration from content (rough estimate)
+                # Vietnamese ~6 chars/sec speaking rate, English ~5 chars/sec
+                if audio_path:
+                    speaking_rate = 5.0 if language.lower().startswith("en") else 6.0
+                    # Use audio file duration if possible
+                    try:
+                        probe = subprocess.run(
+                            ["ffprobe", "-v", "error", "-show_entries", "format=duration",
+                             "-of", "default=noprint_wrappers=1:nokey=1", audio_path],
+                            capture_output=True, text=True, timeout=15,
+                        )
+                        if probe.returncode == 0 and probe.stdout.strip():
+                            audio_duration_sec = float(probe.stdout.strip())
+                    except Exception:
+                        pass
+                    if not audio_duration_sec or audio_duration_sec <= 0:
+                        # Fallback to rough estimate
+                        audio_duration_sec = len(content) / speaking_rate
 
             video_path = ""
             video_source = ""
@@ -147,7 +168,7 @@ def main() -> None:
                             subtitle_path = srt_to_ass(srt_content, ass_out)
                         else:
                             subtitle_path = estimate_ass_from_text(
-                                text=content[:2200],
+                                text=content[:5000],
                                 audio_path=audio_path,
                                 output_path=ass_out,
                             ) or None
@@ -172,6 +193,7 @@ def main() -> None:
                         preserve_quality=settings.video_preserve_quality,
                         overlay_text=settings.video_text_overlay,
                         subtitle_path=subtitle_path,
+                        audio_duration_sec=audio_duration_sec,
                     )
 
             publish_results: list[str] = []
