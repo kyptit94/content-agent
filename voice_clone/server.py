@@ -1,7 +1,9 @@
 import os
+from functools import lru_cache
 from pathlib import Path
 
 from fastapi import FastAPI
+from fastapi import HTTPException
 from pydantic import BaseModel
 from TTS.api import TTS
 
@@ -18,7 +20,9 @@ def _load_tts() -> TTS:
     return TTS(model_name=MODEL_NAME, progress_bar=False, gpu=use_gpu)
 
 
-tts_engine = _load_tts()
+@lru_cache(maxsize=1)
+def get_tts_engine() -> TTS:
+    return _load_tts()
 
 
 class SynthesizePayload(BaseModel):
@@ -35,6 +39,11 @@ def health() -> dict:
 
 @app.post("/synthesize")
 def synthesize(payload: SynthesizePayload) -> dict:
+    try:
+        tts_engine = get_tts_engine()
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"voice model unavailable: {exc}") from exc
+
     output_path = OUTPUT_DIR / payload.output_name
     tts_engine.tts_to_file(
         text=payload.text,
