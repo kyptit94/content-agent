@@ -289,6 +289,10 @@ def web_home() -> str:
         pointer-events: none;
       }
 
+        .is-hidden {
+          display: none;
+        }
+
       @media (max-width: 860px) {
         .row, .check-grid { grid-template-columns: 1fr; }
         .span-6 { grid-column: span 12; }
@@ -336,7 +340,7 @@ def web_home() -> str:
           <label>Tệp video</label>
           <input id=\"videoFile\" type=\"file\" accept=\"video/*\" />
           <button onclick=\"uploadVideo()\">Upload</button>
-          <div id=\"uploadResult\" class=\"status\">Chưa có tệp nào được upload.</div>
+            <button class="secondary" onclick="skipUploadStep()">Bỏ qua bước này, tôi sẽ dùng video internet</button>
         </div>
 
         <div id=\"step3Card\" class=\"card span-6 is-disabled\">
@@ -456,20 +460,35 @@ def web_home() -> str:
         card.classList.toggle('is-disabled', !enabled);
       }
 
+        function setCardVisible(cardId, visible) {
+          const card = document.getElementById(cardId);
+          if (!card) return;
+          card.classList.toggle('is-hidden', !visible);
+        }
+
+        function getCurrentStep() {
+          if (!stepState[1]) return 1;
+          if (!stepState[2]) return 2;
+          if (!stepState[3]) return 3;
+          if (!stepState[4]) return 4;
+          return 5;
+        }
+
       function updateGuide() {
         const completedCount = Object.values(stepState).filter(Boolean).length;
         progressFill.style.width = ((completedCount / 5) * 100) + '%';
+          const currentStep = getCurrentStep();
 
-        if (!stepState[1]) {
+          if (currentStep === 1) {
           agentMessage.innerText = 'Bước 1: lưu token để Agent có quyền gọi API.';
           setStepActive(1);
-        } else if (!stepState[2]) {
+          } else if (currentStep === 2) {
           agentMessage.innerText = 'Bước 2: upload video gốc nếu bạn dùng nguồn tự quay.';
           setStepActive(2);
-        } else if (!stepState[3]) {
+          } else if (currentStep === 3) {
           agentMessage.innerText = 'Bước 3: bấm Gợi ý chủ đề hoặc nhập thủ công.';
           setStepActive(3);
-        } else if (!stepState[4]) {
+          } else if (currentStep === 4) {
           agentMessage.innerText = 'Bước 4: cấu hình đầu ra rồi bấm Chạy job.';
           setStepActive(4);
         } else {
@@ -482,6 +501,13 @@ def web_home() -> str:
         setCardEnabled('step4Card', stepState[1] && stepState[3]);
         setCardEnabled('step5aCard', stepState[1]);
         setCardEnabled('step5bCard', stepState[1]);
+
+          setCardVisible('step1Card', currentStep === 1);
+          setCardVisible('step2Card', currentStep === 2);
+          setCardVisible('step3Card', currentStep === 3);
+          setCardVisible('step4Card', currentStep === 4);
+          setCardVisible('step5aCard', currentStep === 5);
+          setCardVisible('step5bCard', currentStep === 5);
       }
 
       function getToken(){ return localStorage.getItem('adminToken') || ''; }
@@ -518,6 +544,11 @@ def web_home() -> str:
           await loadVideos();
         } catch (e) { alert(e.message); }
       }
+
+        function skipUploadStep(){
+          stepState[2] = true;
+          updateGuide();
+        }
 
       async function suggestTopic(){
         try {
@@ -571,9 +602,11 @@ def web_home() -> str:
         } catch (e) { alert(e.message); }
       }
 
-      if (stepState[1]) {
-        stepState[5] = true;
-      }
+        document.getElementById('topic').addEventListener('input', (event) => {
+          stepState[3] = Boolean(event.target.value.trim());
+          updateGuide();
+        });
+
       updateGuide();
       loadVideos();
       loadJobs();
