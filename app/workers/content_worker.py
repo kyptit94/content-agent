@@ -88,27 +88,46 @@ def main() -> None:
             audio_duration_sec = None
             if create_audio:
                 set_running_status(stage="generating_audio", percent=45, detail="Đang tạo audio")
-                # Truncate content if too long for TTS (safety limit)
                 tts_text = content[:5000]
 
-                # Determine which TTS engine to use
-                use_xtts = bool(voice_sample)  # if user has voice sample, try XTTS first
-                use_edge = True  # always fallback to edge-tts
+                # === STEP 1: Try XTTS (voice clone) if user has voice sample ===
+                if voice_sample:
+                    # Resolve voice sample path - convert mp3 to wav if needed
+                    voice_sample_path_raw = Path(f"/app/data/voices/{voice_sample}")
+                    voice_sample_wav = voice_sample_path_raw
+                    if voice_sample_path_raw.suffix.lower() == ".mp3":
+                        # Convert MP3 to WAV for XTTS compatibility
+                        voice_sample_wav = voice_sample_path_raw.with_suffix(".wav")
+                        if not voice_sample_wav.exists():
+                            try:
+                                subprocess.run(
+                                    ["ffmpeg", "-y", "-i", str(voice_sample_path_raw),
+                                     "-acodec", "pcm_s16le", "-ar", "22050",
+                                     str(voice_sample_wav)],
+                                    check=True, capture_output=True, text=True, timeout=30,
+                                )
+                            except Exception as conv_exc:
+                                audio_error = f"voice_convert: {conv_exc}"
 
-                if use_xtts:
-                    try:
-                        audio_path = voice.synthesize(
-                            text=tts_text,
-                            language=language,
-                            speaker_wav=f"/app/data/voices/{voice_sample}",
-                            output_name=f"{job_id}.wav",
-                        )
-                    except Exception as audio_exc:
-                        audio_error = str(audio_exc)
-                        audio_path = ""
+                    if voice_sample_wav.exists():
+                        try:
+                            audio_path = voice.synthesize(
+                                text=tts_text,
+                                language=language,
+                                speaker_wav=str(voice_sample_wav),
+                                output_name=f"{job_id}.wav",
+                            )
+                        except Exception as audio_exc:
+                            audio_error = f"xtts: {audio_exc}"
+                            audio_path = ""
+                    else:
+                        audio_error = "voice_sample not found"
+                else:
+                    # No voice sample — force edge-tts
+                    pass
 
+                # === STEP 2: Try edge-tts (fallback or primary) ===
                 if not audio_path:
-                    # Fallback to edge-tts (with or without voice sample)
                     try:
                         audio_path, srt_content = voice.synthesize_edge_with_subs(
                             text=tts_text,
@@ -119,11 +138,8 @@ def main() -> None:
                         audio_error = f"{audio_error} | edge_tts: {audio_exc}" if audio_error else str(audio_exc)
                         audio_path = ""
 
-                # Compute audio duration from content (rough estimate)
-                # Vietnamese ~6 chars/sec speaking rate, English ~5 chars/sec
+                # === STEP 3: Get audio duration ===
                 if audio_path:
-                    speaking_rate = 5.0 if language.lower().startswith("en") else 6.0
-                    # Use audio file duration if possible
                     try:
                         probe = subprocess.run(
                             ["ffprobe", "-v", "error", "-show_entries", "format=duration",
@@ -135,7 +151,8 @@ def main() -> None:
                     except Exception:
                         pass
                     if not audio_duration_sec or audio_duration_sec <= 0:
-                        # Fallback to rough estimate
+                        # Rough estimate: vi ~6 chars/sec
+                        speaking_rate = 5.0 if language.lower().startswith("en") else 6.0
                         audio_duration_sec = len(content) / speaking_rate
 
             video_path = ""

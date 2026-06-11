@@ -30,31 +30,24 @@ class VideoComposeService:
         output_path = self.output_dir / f"{job_id}.mp4"
         safe_title = title.replace("'", " ").replace(":", " ")[:90]
 
-        # Compute target duration
-        # If audio exists, video = audio length (via -shortest)
-        # If no audio, use audio_duration_sec or default 30s, loop source to fill
-        target_duration = None
-        if not has_audio:
-            # Use audio_duration_sec from TTS if provided, else fallback 30s
-            target_duration = audio_duration_sec or 30.0
+        # --- Get actual audio duration via ffprobe ---
+        duration_sec = 30.0  # default fallback
+        if has_audio:
+            try:
+                probe = subprocess.run(
+                    ["ffprobe", "-v", "error", "-show_entries", "format=duration",
+                     "-of", "default=noprint_wrappers=1:nokey=1", audio_path],
+                    capture_output=True, text=True, timeout=15,
+                )
+                if probe.returncode == 0 and probe.stdout.strip():
+                    duration_sec = float(probe.stdout.strip())
+            except Exception:
+                duration_sec = audio_duration_sec or 30.0
+        else:
+            duration_sec = audio_duration_sec or 30.0
 
-        # Fast path: copy video stream, add audio, no filters needed
-        if preserve_quality and has_audio and not overlay_text and not has_sub:
-            cmd = [
-                "ffmpeg", "-y",
-                "-stream_loop", "-1",
-                "-i", str(source),
-                "-i", audio_path,
-                "-map", "0:v:0", "-map", "1:a:0",
-                "-c:v", "copy",
-                "-c:a", "aac", "-b:a", "192k",
-                "-shortest",
-                str(output_path),
-            ]
-            completed = subprocess.run(cmd, check=False, capture_output=True, text=True)
-            if completed.returncode == 0:
-                return str(output_path)
-            # Fall through to re-encode path if copy fails
+        # Duration must be reasonable
+        duration_sec = max(10.0, min(duration_sec, 60.0))  # clamp 10s-60s
 
         # Build video filter chain
         vf_parts = [
@@ -67,42 +60,34 @@ class VideoComposeService:
                 "fontsize=46:fontcolor=white:box=1:boxcolor=black@0.45:boxborderw=14".format(safe_title)
             )
         if has_sub:
-            # Escape path for ffmpeg filter (Windows backslash and colons need escaping)
             sub_escaped = str(subtitle_path).replace("\\", "/").replace(":", "\\:")
             vf_parts.append(f"ass={sub_escaped}")
 
         vf = ",".join(vf_parts)
 
+        # Always loop video to match audio length
+        # ALWAYS use re-encode path because copy path CANNOT loop
+        cmd = [
+            "ffmpeg", "-y",
+            "-stream_loop", "-1",
+            "-i", str(source),
+        ]
         if has_audio:
-            # Loop source video to match audio length
-            cmd = [
-                "ffmpeg", "-y",
-                "-stream_loop", "-1",
-                "-i", str(source),
-                "-i", audio_path,
-                "-shortest",
-                "-vf", vf,
-                "-c:v", "libx264",
-                "-crf", str(settings.video_reencode_crf),
-                "-preset", settings.video_reencode_preset,
-                "-c:a", "aac", "-b:a", "192k",
-                str(output_path),
-            ]
-        else:
-            # No audio: loop source for target_duration
-            cmd = [
-                "ffmpeg", "-y",
-                "-stream_loop", "-1",
-                "-i", str(source),
-                "-t", str(target_duration),
-                "-vf", vf,
-                "-c:v", "libx264",
-                "-crf", str(settings.video_reencode_crf),
-                "-preset", settings.video_reencode_preset,
-                str(output_path),
-            ]
+            cmd += ["-i", audio_path]
+        cmd += [
+            "-t", str(duration_sec),
+            "-vf", vf,
+            "-c:v", "libx264",
+            "-crf", str(settings.video_reencode_crf),
+            "-preset", settings.video_reencode_preset,
+        ]
+        if has_audio:
+            cmd += ["-c:a", "aac", "-b:a", "192k"]
+            # map audio
+            cmd += ["-map", "0:v:0", "-map", "1:a:0"]
+        cmd += [str(output_path)]
 
-        completed = subprocess.run(cmd, check=False, capture_output=True, text=True)
+        completed = subprocess.run(cmd, check=False, capture_output=True, text=True, timeout=120)
         if completed.returncode != 0:
             raise RuntimeError(f"Video compose failed: {completed.stderr[-1000:]}")
 
