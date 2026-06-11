@@ -171,25 +171,25 @@ class LLMService:
         allowed, reason = self._gemini_precheck(mode=mode, topic=topic, tone=tone, language=language)
         if not allowed:
             return (
-                "Yeu cau nay khong vuot qua lop kiem duyet an toan truoc khi tao noi dung. "
-                f"Ly do: {reason}."
+                "Yêu cầu này không vượt qua lớp kiểm duyệt an toàn trước khi tạo nội dung. "
+                f"Lý do: {reason}."
             )
 
         if mode == "sales":
             local_prompt = (
-                "Ban la copywriter ban sach. Tao noi dung ban sach co cau truc: "
-                "hook, diem dau, loi ich, CTA ro rang."
-                f"\nNgon ngu: {language}; Giong van: {tone}; Chu de sach: {topic}"
+                "Bạn là copywriter bán sách. Hãy tạo nội dung bán sách có cấu trúc: "
+                "hook, vấn đề, lợi ích, CTA rõ ràng."
+                f"\nNgôn ngữ: {language}; Giọng văn: {tone}; Chủ đề sách: {topic}"
             )
         else:
             local_prompt = (
-                "Ban la tac gia ke chuyen. Viet mot cau chuyen ngan co mo bai, cao trao, ket."
-                f"\nNgon ngu: {language}; Giong van: {tone}; Chu de: {topic}"
+                "Bạn là tác giả kể chuyện. Viết một câu chuyện ngắn có mở bài, cao trào và kết."
+                f"\nNgôn ngữ: {language}; Giọng văn: {tone}; Chủ đề: {topic}"
             )
 
         if feedback_note:
             local_prompt += (
-                "\n\nYeu cau chinh sua ngan gon tu nguoi dung (uu tien lam dung): "
+                "\n\nYêu cầu chỉnh sửa ngắn gọn từ người dùng (ưu tiên làm đúng): "
                 f"{feedback_note}"
             )
 
@@ -199,9 +199,9 @@ class LLMService:
             return local_output
 
         refine_prompt = (
-            "Refine noi dung sau de tu nhien hon, hap dan hon va dung chinh ta. "
-            "Giu nguyen y nghia va muc tieu ban dau.\n\n"
-            f"Noi dung goc:\n{local_output}"
+            "Hãy tinh chỉnh nội dung sau để tự nhiên hơn, hấp dẫn hơn và đúng chính tả. "
+            "Giữ nguyên ý nghĩa và mục tiêu ban đầu.\n\n"
+            f"Nội dung gốc:\n{local_output}"
         )
 
         refine_key_seed = f"{settings.gemini_model}|{language}|{mode}|{local_output}"
@@ -225,12 +225,12 @@ class LLMService:
         recent_topics = self._recent_topics_get(mode=mode, language=language)
         avoid_block = ""
         if recent_topics:
-            avoid_block = "\nKhong duoc lap lai hoac qua giong cac chu de sau: " + " | ".join(recent_topics)
+            avoid_block = "\nKhông được lặp lại hoặc quá giống các chủ đề sau: " + " | ".join(recent_topics)
 
         prompt = (
-            "De xuat DUY NHAT 1 chu de video ngan, viet 1 dong duy nhat, khong danh sach. "
-            "Chu de phai cu the, de lam noi dung ngan 30-60s. "
-            "Moi lan phai doi goc tiep can, khong lap lai mot mo-tip cu."
+            "Đề xuất DUY NHẤT 1 chủ đề video ngắn, viết đúng 1 dòng, không danh sách. "
+            "Chủ đề phải cụ thể, đủ hay để làm nội dung 30-60 giây. "
+            "Mỗi lần phải đổi góc tiếp cận, không lặp lại mô-típ cũ."
             f"\nMode: {mode}; Language: {language}"
             f"{avoid_block}"
         )
@@ -250,18 +250,18 @@ class LLMService:
         recent_topics = recent_topics or []
         if mode == "story":
             candidates = [
-                "Cuon sach cu trong tiem do ve mo ra mot loi hua bi mat",
-                "Co gai de quen mot tam buu thiep trong sach thu vien va 7 nam sau co nguoi hoi am",
-                "Nguoi ban sach ven duong gap lai vi khach cu mang theo mot bi mat gia dinh",
-                "Mot trang sach rot ra trong ngay mua dan toi cuoc gap doi doi",
+                "Cuốn sách cũ trong tiệm đồ ve chai mở ra một lời hứa bí mật",
+                "Cô gái để quên một tấm bưu thiếp trong sách thư viện và 7 năm sau có người hồi âm",
+                "Người bán sách ven đường gặp lại vị khách cũ mang theo một bí mật gia đình",
+                "Một trang sách rơi ra trong ngày mưa dẫn tới cuộc gặp đổi đời",
             ]
         elif language.lower().startswith("vi"):
             candidates = [
-                "Vi sao 10 phut doc sach truoc khi ngu co the doi cach ban nghi ca ngay hom sau",
-                "3 dau hieu ban dang chon sai cuon sach cho muc tieu phat trien ban than",
-                "Cach doc 1 chuong sach ma van nho duoc y chinh de ap dung ngay",
-                "1 thoi quen nho giup ban doc deu hon ma khong can ep ban than",
-                "Tai sao nguoi ban ron van co the doc het 12 cuon sach moi nam",
+                "Vì sao 10 phút đọc sách trước khi ngủ có thể đổi cách bạn nghĩ cả ngày hôm sau",
+                "3 dấu hiệu bạn đang chọn sai cuốn sách cho mục tiêu phát triển bản thân",
+                "Cách đọc 1 chương sách mà vẫn nhớ được ý chính để áp dụng ngay",
+                "1 thói quen nhỏ giúp bạn đọc đều hơn mà không cần ép bản thân",
+                "Tại sao người bận rộn vẫn có thể đọc hết 12 cuốn sách mỗi năm",
             ]
         else:
             candidates = [

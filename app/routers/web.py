@@ -59,7 +59,7 @@ def web_home() -> str:
   <head>
     <meta charset=\"utf-8\" />
     <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\" />
-    <title>AI Agent Console</title>
+    <title>AI Agent Điều Phối Nội Dung</title>
     <style>
       :root {
         --bg: #f6f7fb;
@@ -298,128 +298,128 @@ def web_home() -> str:
   <body>
     <div class=\"wrap\">
       <div class=\"hero\">
-        <h1>AI Agent Console</h1>
-        <p>Giao dien chay job theo tung buoc, de theo doi va thao tac nhanh.</p>
+        <h1>AI Agent Điều Phối Nội Dung</h1>
+        <p>Trợ lý này sẽ dẫn bạn đi từng bước để lên ý tưởng, chuẩn bị nguồn video và chạy job rõ ràng.</p>
         <div class=\"step-flow\">
-          <span id=\"chip1\" class=\"step-chip\">1. Token</span>
+          <span id=\"chip1\" class=\"step-chip\">1. Xác thực</span>
           <span id=\"chip2\" class=\"step-chip\">2. Upload Video</span>
-          <span id=\"chip3\" class=\"step-chip\">3. Goi Y Topic</span>
-          <span id=\"chip4\" class=\"step-chip\">4. Cau Hinh Job</span>
-          <span id=\"chip5\" class=\"step-chip\">5. Theo Doi Ket Qua</span>
+          <span id=\"chip3\" class=\"step-chip\">3. Gợi ý chủ đề</span>
+          <span id=\"chip4\" class=\"step-chip\">4. Cấu hình job</span>
+          <span id=\"chip5\" class=\"step-chip\">5. Theo dõi kết quả</span>
         </div>
 
         <div class=\"agent-box\">
-          <div class=\"agent-head\">AI Agent Guide</div>
-          <div id=\"agentMessage\" class=\"agent-message\">Bat dau tu Buoc 1: nhap token roi bam Luu token.</div>
+          <div class=\"agent-head\">Hướng dẫn của AI Agent</div>
+          <div id=\"agentMessage\" class=\"agent-message\">Bắt đầu từ Bước 1: nhập token rồi bấm Lưu token.</div>
           <div class=\"progress-track\"><div id=\"progressFill\" class=\"progress-fill\"></div></div>
         </div>
       </div>
 
       <div class=\"grid\">
-        <div id="step2Card" class="card span-6 is-disabled">
+        <div id=\"step1Card\" class=\"card span-6\">
           <div class=\"step-title\">
             <span class=\"badge\">1</span>
-            <h3>Xac thuc Admin Token</h3>
+            <h3>Xác thực Admin Token</h3>
           </div>
-          <p class=\"hint\">Nhap WEB_ADMIN_TOKEN de su dung API web.</p>
+          <p class=\"hint\">Nhập WEB_ADMIN_TOKEN để Agent có quyền gọi các API nội bộ.</p>
           <label>Admin token</label>
           <input id=\"token\" placeholder=\"WEB_ADMIN_TOKEN\" />
-          <button onclick=\"saveToken()\">Luu token</button>
+          <button onclick=\"saveToken()\">Lưu token</button>
         </div>
 
-        <div class=\"card span-6\">
-        <div id="step3Card" class="card span-6 is-disabled">
+        <div id=\"step2Card\" class=\"card span-6 is-disabled\">
+          <div class=\"step-title\">
             <span class=\"badge\">2</span>
-            <h3>Upload Video Goc</h3>
+            <h3>Upload Video Gốc</h3>
           </div>
-          <p class=\"hint\">Neu chon nguon self thi can upload truoc.</p>
-          <label>File video</label>
+          <p class=\"hint\">Nếu chọn nguồn video tự quay thì hãy upload trước ở bước này.</p>
+          <label>Tệp video</label>
           <input id=\"videoFile\" type=\"file\" accept=\"video/*\" />
           <button onclick=\"uploadVideo()\">Upload</button>
-          <div id=\"uploadResult\" class=\"status\">Chua co file nao duoc upload.</div>
+          <div id=\"uploadResult\" class=\"status\">Chưa có tệp nào được upload.</div>
         </div>
 
-        <div class=\"card span-6\">
+        <div id=\"step3Card\" class=\"card span-6 is-disabled\">
           <div class=\"step-title\">
             <span class=\"badge\">3</span>
-            <h3>Goi Y Chu De</h3>
+            <h3>Gợi ý chủ đề</h3>
           </div>
-          <p class=\"hint\">Lay topic nhanh de dua vao buoc tao job.</p>
+          <p class=\"hint\">Yêu cầu Agent gợi ý một chủ đề ngắn, cụ thể và dễ triển khai thành video.</p>
           <div class=\"row\">
             <div>
               <label>Mode</label>
-              <select id=\"mode\"><option value=\"sales\">sales</option><option value=\"story\">story</option></select>
-        <div id="step4Card" class="card is-disabled">
+              <select id=\"mode\"><option value=\"sales\">Bán sách</option><option value=\"story\">Kể chuyện</option></select>
+            </div>
             <div>
-              <label>Language</label>
+              <label>Ngôn ngữ</label>
               <input id=\"language\" value=\"vi\" />
             </div>
           </div>
-          <button onclick=\"suggestTopic()\">Suggest Topic</button>
-          <label>Topic</label>
-          <textarea id=\"topic\" rows=\"3\" placeholder=\"Nhap topic o day\"></textarea>
+          <button onclick=\"suggestTopic()\">Gợi ý chủ đề</button>
+          <label>Chủ đề</label>
+          <textarea id=\"topic\" rows=\"3\" placeholder=\"Nhập chủ đề ở đây\"></textarea>
         </div>
 
-        <div class=\"card\">
+        <div id=\"step4Card\" class=\"card is-disabled\">
           <div class=\"step-title\">
             <span class=\"badge\">4</span>
-            <h3>Cau Hinh Va Chay Job</h3>
+            <h3>Cấu hình và chạy job</h3>
           </div>
-          <p class=\"hint\">Thiet lap nguon video, tone, thong bao roi bam Run.</p>
+          <p class=\"hint\">Thiết lập nguồn video, giọng điệu và thông báo rồi bấm chạy.</p>
 
           <div class=\"row\">
             <div>
-              <label>Nguon video</label>
+              <label>Nguồn video</label>
               <select id=\"videoSourceType\">
-                <option value=\"self\">self - dung video da upload</option>
-                <option value=\"internet\">internet - tim clip stock</option>
+                <option value=\"self\">Tự quay - dùng video đã upload</option>
+                <option value=\"internet\">Internet - tìm clip stock</option>
               </select>
             </div>
             <div>
-              <label>Tone</label>
-              <input id=\"tone\" value=\"friendly\" />
+              <label>Giọng điệu</label>
+              <input id=\"tone\" value=\"thân thiện\" />
             </div>
           </div>
 
           <div class=\"row\">
             <div>
-              <label>Video source path (self)</label>
+              <label>Đường dẫn video nguồn (tự quay)</label>
               <input id=\"videoPath\" placeholder=\"/app/data/uploads/...\" />
             </div>
             <div>
-              <label>Video keyword (internet)</label>
-              <input id=\"videoKeyword\" placeholder=\"book reading, study desk...\" />
+              <label>Từ khóa video (internet)</label>
+              <input id=\"videoKeyword\" placeholder=\"đọc sách, bàn học, thư viện...\" />
             </div>
           </div>
 
-        <div id="step5aCard" class="card span-6 is-disabled">
-            <label class=\"check-item\"><input id=\"createAudio\" type=\"checkbox\" /> Create audio</label>
-            <label class=\"check-item\"><input id=\"useGemini\" type=\"checkbox\" /> Gemini refine</label>
-            <label class=\"check-item\"><input id=\"notifyTelegram\" type=\"checkbox\" checked /> Notify Telegram</label>
-            <label class=\"check-item\">Telegram Chat ID<input id=\"telegramChatId\" placeholder=\"optional\" /></label>
+          <div class=\"check-grid\">
+            <label class=\"check-item\"><input id=\"createAudio\" type=\"checkbox\" /> Tạo audio</label>
+            <label class=\"check-item\"><input id=\"useGemini\" type=\"checkbox\" /> Gemini tinh chỉnh</label>
+            <label class=\"check-item\"><input id=\"notifyTelegram\" type=\"checkbox\" checked /> Báo Telegram</label>
+            <label class=\"check-item\">Chat ID Telegram<input id=\"telegramChatId\" placeholder=\"không bắt buộc\" /></label>
           </div>
 
-          <button onclick=\"createJob()\">Run Job</button>
-          <div id=\"jobResult\" class=\"status\">Chua tao job.</div>
+          <button onclick=\"createJob()\">Chạy job</button>
+          <div id=\"jobResult\" class=\"status\">Chưa tạo job.</div>
         </div>
-        <div id="step5bCard" class="card span-6 is-disabled">
-        <div class=\"card span-6\">
+
+        <div id=\"step5aCard\" class=\"card span-6 is-disabled\">
           <div class=\"step-title\">
             <span class=\"badge\">5</span>
-            <h3>Video Da Upload</h3>
+            <h3>Video đã upload</h3>
           </div>
-          <p class=\"hint\">Kiem tra duong dan video de chon cho nguon self.</p>
-          <button class=\"secondary\" onclick=\"loadVideos()\">Refresh Videos</button>
+          <p class=\"hint\">Kiểm tra đường dẫn video để dùng cho nguồn tự quay.</p>
+          <button class=\"secondary\" onclick=\"loadVideos()\">Làm mới danh sách video</button>
           <pre id=\"videos\"></pre>
         </div>
 
-        <div class=\"card span-6\">
+        <div id=\"step5bCard\" class=\"card span-6 is-disabled\">
           <div class=\"step-title\">
             <span class=\"badge\">5</span>
-            <h3>Job Gan Day</h3>
+            <h3>Job gần đây</h3>
           </div>
-          <p class=\"hint\">Theo doi trang thai queued, running, completed, failed.</p>
-          <button class=\"secondary\" onclick=\"loadJobs()\">Refresh Jobs</button>
+          <p class=\"hint\">Theo dõi trạng thái đang chờ, đang chạy, hoàn tất hoặc thất bại.</p>
+          <button class=\"secondary\" onclick=\"loadJobs()\">Làm mới danh sách job</button>
           <pre id=\"jobs\"></pre>
         </div>
       </div>
@@ -461,19 +461,19 @@ def web_home() -> str:
         progressFill.style.width = ((completedCount / 5) * 100) + '%';
 
         if (!stepState[1]) {
-          agentMessage.innerText = 'Buoc 1: luu token de Agent co quyen goi API.';
+          agentMessage.innerText = 'Bước 1: lưu token để Agent có quyền gọi API.';
           setStepActive(1);
         } else if (!stepState[2]) {
-          agentMessage.innerText = 'Buoc 2: upload video goc (neu dung nguon self).';
+          agentMessage.innerText = 'Bước 2: upload video gốc nếu bạn dùng nguồn tự quay.';
           setStepActive(2);
         } else if (!stepState[3]) {
-          agentMessage.innerText = 'Buoc 3: bam Suggest Topic hoac nhap topic thu cong.';
+          agentMessage.innerText = 'Bước 3: bấm Gợi ý chủ đề hoặc nhập thủ công.';
           setStepActive(3);
         } else if (!stepState[4]) {
-          agentMessage.innerText = 'Buoc 4: cau hinh va bam Run Job.';
+          agentMessage.innerText = 'Bước 4: cấu hình đầu ra rồi bấm Chạy job.';
           setStepActive(4);
         } else {
-          agentMessage.innerText = 'Buoc 5: theo doi job, refresh de xem trang thai moi nhat.';
+          agentMessage.innerText = 'Bước 5: theo dõi job và làm mới để xem trạng thái mới nhất.';
           setStepActive(5);
         }
 
@@ -490,7 +490,7 @@ def web_home() -> str:
         localStorage.setItem('adminToken', value);
         stepState[1] = Boolean(value);
         updateGuide();
-        alert('Token da duoc luu');
+        alert('Token đã được lưu');
       }
 
       async function api(url, options={}) {
@@ -512,7 +512,7 @@ def web_home() -> str:
           const data = await out.json();
           if (!out.ok) throw new Error(JSON.stringify(data));
           stepState[2] = true;
-          document.getElementById('uploadResult').innerText = 'Upload thanh cong: ' + data.saved_path;
+          document.getElementById('uploadResult').innerText = 'Upload thành công: ' + data.saved_path;
           document.getElementById('videoPath').value = data.saved_path;
           updateGuide();
           await loadVideos();
@@ -551,7 +551,7 @@ def web_home() -> str:
           const data = await api('/web/jobs', { method: 'POST', headers: {'content-type':'application/json'}, body: JSON.stringify(body) });
           stepState[4] = true;
           stepState[5] = true;
-          document.getElementById('jobResult').innerText = 'Job da tao: ' + data.job_id;
+          document.getElementById('jobResult').innerText = 'Đã tạo job: ' + data.job_id;
           updateGuide();
           await loadJobs();
         } catch (e) { alert(e.message); }
