@@ -7,7 +7,10 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi import HTTPException
 from pydantic import BaseModel
+import torch
 from TTS.api import TTS
+from TTS.tts.configs.xtts_config import XttsConfig
+from TTS.tts.models.xtts import XttsArgs, XttsAudioConfig
 
 app = FastAPI(title="Voice Clone Service", version="1.0.0")
 logger = logging.getLogger(__name__)
@@ -25,6 +28,8 @@ VOICE_SAMPLE_DIR = Path(os.getenv("VOICE_SAMPLE_DIR", "/app/data/voices"))
 
 def _load_tts() -> TTS:
     use_gpu = os.environ.get("CUDA_VISIBLE_DEVICES", "") != ""
+    if hasattr(torch.serialization, "add_safe_globals"):
+        torch.serialization.add_safe_globals([XttsConfig, XttsArgs, XttsAudioConfig])
     return TTS(model_name=MODEL_NAME, progress_bar=False, gpu=use_gpu)
 
 
