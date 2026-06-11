@@ -1,5 +1,6 @@
 import asyncio
 import os
+import re
 import time
 from pathlib import Path
 from urllib.parse import urlparse
@@ -14,6 +15,14 @@ _VI_FALLBACK_VOICES = [
     "vi-VN-NamMinhNeural",
 ]
 
+# Regex patterns for text preprocessing
+_RE_HOOK_END = re.compile(r"([.!?])\s+(.*?)\s*[,;:]\s*$", re.MULTILINE)
+_RE_QUESTION = re.compile(r"([^.!?]*\?)\s*")
+_RE_EXCLAMATION = re.compile(r"([^.!?]*!)\s*")
+_RE_ELLIPSIS = re.compile(r"\.{3,}")
+_RE_NEWLINE = re.compile(r"\n{2,}")
+_RE_CONSECUTIVE_DOT = re.compile(r"\.{2,}")
+
 
 class VoiceService:
     def __init__(self) -> None:
@@ -21,9 +30,62 @@ class VoiceService:
         self.output_dir = Path("/app/data/outputs")
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
+    @staticmethod
+    def _preprocess_for_tts(text: str, language: str = "vi") -> str:
+        """
+        Preprocess text to make TTS output more natural:
+        1. Ensure sentences end with proper punctuation
+        2. Add prosody markers (pauses, emphasis) via text patterns
+        3. Clean up whitespace
+        """
+        if not text:
+            return text
+
+        # --- Step 1: Normalize whitespace ---
+        text = text.strip()
+        text = _RE_NEWLINE.sub("\n", text)
+
+        # --- Step 2: Ensure sentence-ending punctuation ---
+        # Split into lines, process each line
+        lines = text.split("\n")
+        processed_lines = []
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
+
+            # Ensure line ends with sentence-ending punctuation
+            if line and not line[-1] in ".!?":
+                line += "."
+
+            processed_lines.append(line)
+
+        # Join lines - each line gets a natural pause (like a paragraph break)
+        text = "\n".join(processed_lines)
+
+        # --- Step 3: Add natural rhythm markers ---
+        # Between hook/CTA sections: mark for pause
+        text = text.replace(".\n", ". \n")
+
+        # --- Step 4: Clean up ---
+        # Replace 3+ dots with "... "
+        text = _RE_ELLIPSIS.sub("... ", text)
+        # Replace consecutive dots
+        text = _RE_CONSECUTIVE_DOT.sub(".", text)
+        # Fix common Vietnamese punctuation spacing
+        text = re.sub(r"\s+([,.;:!?])", r"\1", text)  # remove space before punctuation
+        text = re.sub(r"([,.;:!?])(?!\s|$)", r"\1 ", text)  # ensure space after punctuation
+        # Collapse multiple spaces
+        text = re.sub(r" {2,}", " ", text)
+
+        return text.strip()
+
     def synthesize(self, text: str, language: str, speaker_wav: str, output_name: str) -> str:
+        # Preprocess text for better TTS output
+        processed_text = self._preprocess_for_tts(text, language)
+
         payload = {
-            "text": text,
+            "text": processed_text,
             "language": language,
             "speaker_wav": speaker_wav,
             "output_name": output_name,
@@ -96,6 +158,9 @@ class VoiceService:
                 "edge_tts not installed. Rebuild image with latest requirements-app.txt"
             ) from exc
 
+        # Preprocess text for natural voice
+        text = self._preprocess_for_tts(text)
+
         output_path = self.output_dir / output_name
         primary = voice_name or settings.edge_tts_voice
 
@@ -118,6 +183,9 @@ class VoiceService:
         self, text: str, output_name: str, voice_name: str | None = None
     ) -> tuple[str, str]:
         """Returns (audio_path, srt_content). Falls back to gTTS if edge_tts fails."""
+        # Preprocess text for natural voice
+        text = self._preprocess_for_tts(text)
+
         output_path = self.output_dir / output_name
         attempt_log: list[str] = []
 

@@ -1,5 +1,7 @@
 import hashlib
 import random
+from pathlib import Path
+
 import requests
 
 from redis import Redis
@@ -7,10 +9,21 @@ from redis import Redis
 from app.config import settings
 
 
+_PROMPT_DIR = Path(__file__).resolve().parent.parent.parent / "prompts"
+
+
 class LLMService:
     def __init__(self) -> None:
         self.ollama_base_url = settings.ollama_base_url.rstrip("/")
         self.redis = Redis.from_url(settings.redis_url, decode_responses=True)
+
+    @staticmethod
+    def _load_prompt(mode: str) -> str:
+        filename = f"{mode}_prompt_vi.txt"
+        filepath = _PROMPT_DIR / filename
+        if filepath.exists():
+            return filepath.read_text(encoding="utf-8").strip()
+        return ""
 
     @staticmethod
     def _hash_text(value: str) -> str:
@@ -83,16 +96,16 @@ class LLMService:
             return True
         return self._is_risky_topic(topic)
 
-    def _call_ollama(self, prompt: str) -> str:
+    def _call_ollama(self, prompt: str, num_predict: int = 2000) -> str:
         response = requests.post(
             f"{self.ollama_base_url}/api/generate",
             json={
                 "model": settings.local_llm_model,
                 "prompt": prompt,
                 "stream": False,
-                "options": {"temperature": 0.8, "num_predict": 900},
+                "options": {"temperature": 0.85, "num_predict": num_predict, "top_p": 0.92},
             },
-            timeout=180,
+            timeout=300,
         )
         response.raise_for_status()
         return response.json().get("response", "").strip()
@@ -197,17 +210,29 @@ class LLMService:
                 f"Lý do: {reason}."
             )
 
-        if mode == "sales":
+        # --- Build prompt from file ---
+        base_prompt = self._load_prompt(mode=mode)
+        if base_prompt:
             local_prompt = (
-                "Bạn là copywriter bán sách. Hãy tạo nội dung bán sách có cấu trúc: "
-                "hook, vấn đề, lợi ích, CTA rõ ràng."
-                f"\nNgôn ngữ: {language}; Giọng văn: {tone}; Chủ đề sách: {topic}"
+                base_prompt
+                .replace("{language}", language)
+                .replace("{tone}", tone)
+                .replace("{topic}", topic)
             )
         else:
-            local_prompt = (
-                "Bạn là tác giả kể chuyện. Viết một câu chuyện ngắn có mở bài, cao trào và kết."
-                f"\nNgôn ngữ: {language}; Giọng văn: {tone}; Chủ đề: {topic}"
-            )
+            # Fallback: inline prompt if file missing
+            if mode == "sales":
+                local_prompt = (
+                    "Bạn là copywriter bán sách. Hãy tạo nội dung bán sách có cấu trúc: "
+                    "hook, vấn đề, lợi ích, CTA rõ ràng."
+                    f"\nNgôn ngữ: {language}; Giọng văn: {tone}; Chủ đề sách: {topic}"
+                )
+            else:
+                local_prompt = (
+                    "Bạn là tác giả kể chuyện. Viết một câu chuyện ngắn có mở bài, cao trào và kết. "
+                    "Sử dụng nhiều hình ảnh, đối thoại, miêu tả nội tâm."
+                    f"\nNgôn ngữ: {language}; Giọng văn: {tone}; Chủ đề: {topic}"
+                )
 
         if feedback_note:
             local_prompt += (
@@ -215,8 +240,9 @@ class LLMService:
                 f"{feedback_note}"
             )
 
+        # --- First pass: generate initial content ---
         try:
-            local_output = self._call_ollama(local_prompt)
+            local_output = self._call_ollama(local_prompt, num_predict=2500)
         except requests.HTTPError as exc:
             if getattr(exc.response, "status_code", None) == 404:
                 local_output = self._build_local_generation(
@@ -237,23 +263,40 @@ class LLMService:
                 feedback_note=feedback_note,
             )
 
+        # --- If no Gemini refine, return as-is ---
         if not use_gemini_refine or not settings.gemini_api_key:
             return local_output
 
-        refine_prompt = (
-            "Hãy tinh chỉnh nội dung sau để tự nhiên hơn, hấp dẫn hơn và đúng chính tả. "
-            "Giữ nguyên ý nghĩa và mục tiêu ban đầu.\n\n"
-            f"Nội dung gốc:\n{local_output}"
-        )
+        # --- Second pass: Gemini refine + expand ---
+        if mode == "sales":
+            refine_instruction = (
+                "Hãy mở rộng và tinh chỉnh nội dung bán sách dưới đây. "
+                "Yêu cầu: giữ nguyên cấu trúc (hook → nỗi đau → giải pháp → lợi ích → CTA), "
+                "thêm chi tiết cụ thể, câu chuyện nhỏ, hình ảnh sinh động. "
+                "Viết dài hơn bản gốc (tối thiểu 350 chữ), câu ngắn, dễ đọc, hấp dẫn. "
+                "Giữ đúng ý nghĩa và mục tiêu ban đầu.\n\n"
+                f"Nội dung gốc:\n{local_output}"
+            )
+        else:
+            refine_instruction = (
+                "Hãy mở rộng và tinh chỉnh câu chuyện dưới đây. "
+                "Yêu cầu: giữ nguyên cốt truyện và cao trào, "
+                "thêm chi tiết miêu tả (cảnh vật, cảm xúc, đối thoại) để câu chuyện dài hơn và giàu cảm xúc hơn. "
+                "Viết dài hơn bản gốc (tối thiểu 400 chữ). "
+                "Giữ đúng ý nghĩa và mục tiêu ban đầu.\n\n"
+                f"Nội dung gốc:\n{local_output}"
+            )
 
-        refine_key_seed = f"{settings.gemini_model}|{language}|{mode}|{local_output}"
+        refine_key_seed = f"expand|{settings.gemini_model}|{language}|{mode}|{local_output}"
         refine_cache_key = f"gemini:refine:{self._hash_text(refine_key_seed)}"
         cached_refine = self._cache_get(refine_cache_key)
         if cached_refine:
             return cached_refine
 
         try:
-            refined = self._call_gemini(refine_prompt)
+            refined = self._call_gemini(refine_instruction)
+            # If refined output is too short, use original
+            refined = refined or local_output
             self._cache_set(
                 key=refine_cache_key,
                 value=refined,

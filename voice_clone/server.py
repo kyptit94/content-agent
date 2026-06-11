@@ -1,8 +1,10 @@
 import os
+import re
 import logging
 import threading
 from functools import lru_cache
 from pathlib import Path
+from typing import Optional
 
 from fastapi import FastAPI
 from fastapi import HTTPException
@@ -27,6 +29,14 @@ EDGE_TTS_RATE = os.getenv("EDGE_TTS_RATE", "+0%")
 OUTPUT_DIR = Path(os.getenv("VOICE_OUTPUT_DIR", "/app/data/outputs"))
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 VOICE_SAMPLE_DIR = Path(os.getenv("VOICE_SAMPLE_DIR", "/app/data/voices"))
+
+# Regex for text preprocessing
+_RE_NEWLINE = re.compile(r"\n{2,}")
+_RE_ELLIPSIS = re.compile(r"\.{3,}")
+_RE_CONSECUTIVE_DOT = re.compile(r"\.{2,}")
+
+# Default Vietnamese speaker sample for XTTS if none provided
+_DEFAULT_VI_SPEAKER = VOICE_SAMPLE_DIR / "default_vi_speaker.wav"
 
 
 def _load_tts() -> TTS:
@@ -86,6 +96,61 @@ def health() -> dict:
     return {"status": "loading", "ready": False, "model": MODEL_NAME}
 
 
+def _preprocess_vi_text(text: str) -> str:
+    """Preprocess Vietnamese text for better XTTS pronunciation."""
+    if not text:
+        return text
+
+    # Normalize whitespace
+    text = text.strip()
+    text = _RE_NEWLINE.sub("\n", text)
+
+    # Ensure sentence-ending punctuation
+    lines = text.split("\n")
+    processed_lines = []
+    for line in lines:
+        line = line.strip()
+        if not line:
+            continue
+        if line and line[-1] not in ".!?":
+            line += "."
+        processed_lines.append(line)
+    text = "\n".join(processed_lines)
+
+    # Clean up punctuation spacing for Vietnamese
+    text = re.sub(r"\s+([,.;:!?])", r"\1", text)   # remove space before punct
+    text = re.sub(r"([,.;:!?])(?!\s|$)", r"\1 ", text)  # ensure space after
+    # Replace 3+ dots with three dots
+    text = _RE_ELLIPSIS.sub("... ", text)
+    text = _RE_CONSECUTIVE_DOT.sub(".", text)
+    # Collapse spaces
+    text = re.sub(r" {2,}", " ", text)
+
+    return text.strip()
+
+
+def _resolve_speaker_wav(speaker_wav: str) -> str:
+    """Resolve speaker_wav path; use default if not found."""
+    path = Path(speaker_wav)
+    if path.exists() and path.is_file():
+        return speaker_wav
+    # Try under VOICE_SAMPLE_DIR
+    alt_path = VOICE_SAMPLE_DIR / path.name
+    if alt_path.exists():
+        return str(alt_path)
+    # Fallback to default
+    if _DEFAULT_VI_SPEAKER.exists():
+        logger.warning(
+            "Speaker wav %s not found, using default: %s",
+            speaker_wav,
+            _DEFAULT_VI_SPEAKER,
+        )
+        return str(_DEFAULT_VI_SPEAKER)
+    # If no default exists, create a basic silent one or just return empty
+    logger.warning("Speaker wav %s not found and no default available", speaker_wav)
+    return speaker_wav
+
+
 @app.post("/synthesize")
 def synthesize(payload: SynthesizePayload) -> dict:
     try:
@@ -94,42 +159,65 @@ def synthesize(payload: SynthesizePayload) -> dict:
         logger.exception("voice model unavailable during synthesize")
         raise HTTPException(status_code=503, detail=f"voice model unavailable: {exc}") from exc
 
+    # Preprocess text for natural pronunciation
+    processed_text = _preprocess_vi_text(payload.text)
+    # Resolve speaker wav
+    speaker_wav = _resolve_speaker_wav(payload.speaker_wav)
+
     output_path = OUTPUT_DIR / payload.output_name
 
-    try:
-        tts_engine.tts_to_file(
-            text=payload.text,
-            speaker_wav=payload.speaker_wav,
-            language=payload.language,
-            file_path=str(output_path),
-        )
-    except AssertionError as exc:
-        if "Language" not in str(exc) and "supported" not in str(exc):
-            raise
+    # --- Try XTTS with Vietnamese ---
+    # XTTS supports 'vi' but sometimes needs exact language code
+    # Try "vi" first, fallback to multilingual empty string
+    tried_languages = [payload.language]
+    if payload.language.lower() == "vi":
+        tried_languages.append("")
+        tried_languages.append("en")
 
-        logger.warning(
-            "XTTS does not support language %s, falling back to Edge TTS voice %s",
-            payload.language,
-            EDGE_TTS_VOICE,
-        )
-
+    last_xtts_error: Optional[Exception] = None
+    for lang in tried_languages:
         try:
-            import asyncio
-            import edge_tts
+            tts_engine.tts_to_file(
+                text=processed_text,
+                speaker_wav=speaker_wav,
+                language=lang,
+                file_path=str(output_path),
+            )
+            logger.info(
+                "XTTS synthesis succeeded: lang=%s, output=%s",
+                lang or "<empty>",
+                output_path,
+            )
+            return {"audio_path": str(output_path)}
+        except Exception as exc:
+            last_xtts_error = exc
+            logger.warning("XTTS failed with lang='%s': %s", lang, exc)
+            # Don't abort on Language assertion, try next
+            if "Language" not in str(exc) and "supported" not in str(exc):
+                break  # Non-language error, stop trying
 
-            async def _run() -> None:
-                communicate = edge_tts.Communicate(
-                    text=payload.text,
-                    voice=EDGE_TTS_VOICE,
-                    rate=EDGE_TTS_RATE,
-                )
-                await communicate.save(str(output_path))
+    # --- Fallback to Edge TTS ---
+    logger.warning(
+        "XTTS failed for all language attempts, falling back to Edge TTS voice %s",
+        EDGE_TTS_VOICE,
+    )
+    try:
+        import asyncio
+        import edge_tts
 
-            asyncio.run(_run())
-        except Exception as fallback_exc:
-            raise HTTPException(
-                status_code=500,
-                detail=f"XTTS failed and Edge TTS fallback failed: {fallback_exc}",
-            ) from fallback_exc
+        async def _run() -> None:
+            communicate = edge_tts.Communicate(
+                text=processed_text,
+                voice=EDGE_TTS_VOICE,
+                rate=EDGE_TTS_RATE,
+            )
+            await communicate.save(str(output_path))
 
-    return {"audio_path": str(output_path)}
+        asyncio.run(_run())
+        logger.info("Edge TTS fallback succeeded: %s", output_path)
+        return {"audio_path": str(output_path)}
+    except Exception as fallback_exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f"XTTS failed and Edge TTS fallback failed: {fallback_exc}",
+        ) from fallback_exc
