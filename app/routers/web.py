@@ -3,8 +3,10 @@ from datetime import datetime
 from uuid import uuid4
 
 from fastapi import APIRouter
+from fastapi import File
 from fastapi import Header
 from fastapi import HTTPException
+from fastapi import UploadFile
 from fastapi.responses import HTMLResponse
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
@@ -508,7 +510,31 @@ def web_home() -> str:
           <div class="row">
             <div>
               <label>Voice sample</label>
-              <input id="voiceSampleFilename" list="voiceSamples" placeholder="chọn hoặc gõ tên file .wav" />
+              <select id="voiceSourceMode" onchange="updateVoiceSourceModeUI()">
+                <option value="library">Lấy từ thư viện audio</option>
+                <option value="upload">Tải file lên</option>
+              </select>
+
+              <div id="voiceLibraryPanel">
+                <div class="row">
+                  <div>
+                    <label>Thư viện audio</label>
+                    <select id="voiceLibrarySelect"></select>
+                  </div>
+                  <div>
+                    <label>&nbsp;</label>
+                    <button class="secondary" onclick="pickVoiceFromLibrary()">Dùng voice đã chọn</button>
+                  </div>
+                </div>
+              </div>
+
+              <div id="voiceUploadPanel" class="is-hidden">
+                <label>Tải file voice (.wav/.mp3/.m4a/.ogg/.flac)</label>
+                <input id="voiceUploadFile" type="file" accept=".wav,.mp3,.m4a,.ogg,.flac" />
+                <button class="secondary" onclick="uploadVoiceSample()">Tải voice lên server</button>
+              </div>
+
+              <input id="voiceSampleFilename" list="voiceSamples" placeholder="voice đã chọn" />
               <datalist id="voiceSamples"></datalist>
               <div id="voiceSampleHint" class="status">Tải danh sách voice sample để video có tiếng.</div>
             </div>
@@ -721,13 +747,61 @@ def web_home() -> str:
         hint.style.color = isWarning ? '#9a3412' : '#294268';
       }
 
+      function updateVoiceSourceModeUI() {
+        const mode = document.getElementById('voiceSourceMode').value;
+        document.getElementById('voiceLibraryPanel').classList.toggle('is-hidden', mode !== 'library');
+        document.getElementById('voiceUploadPanel').classList.toggle('is-hidden', mode !== 'upload');
+      }
+
+      function pickVoiceFromLibrary() {
+        const selected = document.getElementById('voiceLibrarySelect').value;
+        if (!selected) {
+          updateVoiceSampleHint('Thư viện audio đang trống. Hãy tải file lên trước.', true);
+          return;
+        }
+        document.getElementById('voiceSampleFilename').value = selected;
+        updateVoiceSampleHint(`Đã chọn voice sample: ${selected}`);
+      }
+
+      async function uploadVoiceSample() {
+        const fileInput = document.getElementById('voiceUploadFile');
+        const file = fileInput.files && fileInput.files[0];
+        if (!file) {
+          updateVoiceSampleHint('Bạn chưa chọn file để tải lên.', true);
+          return;
+        }
+
+        const formData = new FormData();
+        formData.append('file', file);
+
+        try {
+          const response = await fetch('/web/voice-samples/upload', {
+            method: 'POST',
+            headers: { 'x-admin-token': getToken() },
+            body: formData,
+          });
+          if (!response.ok) {
+            throw new Error(await response.text());
+          }
+          const data = await response.json();
+          document.getElementById('voiceSampleFilename').value = data.filename;
+          fileInput.value = '';
+          await loadVoiceSamples();
+          updateVoiceSampleHint(`Đã tải lên: ${data.filename}`);
+        } catch (error) {
+          updateVoiceSampleHint('Tải file voice thất bại: ' + error.message, true);
+        }
+      }
+
       async function loadVoiceSamples() {
         try {
           const data = await api('/web/voice-samples');
           const samples = data.items || [];
           const datalist = document.getElementById('voiceSamples');
           const voiceInput = document.getElementById('voiceSampleFilename');
+          const voiceSelect = document.getElementById('voiceLibrarySelect');
           datalist.innerHTML = samples.map((item) => `<option value="${escapeHtml(item)}"></option>`).join('');
+          voiceSelect.innerHTML = samples.map((item) => `<option value="${escapeHtml(item)}">${escapeHtml(item)}</option>`).join('');
           if (samples.length && !voiceInput.value.trim()) {
             voiceInput.value = samples[0];
           }
@@ -1002,6 +1076,7 @@ def web_home() -> str:
 
       updateGuide();
       renderLatestJobAction(getLatestJob());
+      updateVoiceSourceModeUI();
       loadVoiceSamples();
       loadJobs();
     </script>
@@ -1078,6 +1153,30 @@ def list_voice_samples(x_admin_token: str | None = Header(default=None)) -> dict
         if path.is_file() and path.suffix.lower() in allowed_ext
     )
     return {"items": items}
+@router.post("/voice-samples/upload")
+def upload_voice_sample(file: UploadFile = File(...), x_admin_token: str | None = Header(default=None)) -> dict:
+    _check_token(x_admin_token)
+
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="missing filename")
+
+    voices_dir = Path("/app/data/voices")
+    voices_dir.mkdir(parents=True, exist_ok=True)
+
+    safe_name = Path(file.filename).name
+    suffix = Path(safe_name).suffix.lower()
+    allowed_ext = {".wav", ".mp3", ".m4a", ".ogg", ".flac"}
+    if suffix not in allowed_ext:
+        raise HTTPException(status_code=400, detail="unsupported audio format")
+
+    stem = Path(safe_name).stem
+    target = voices_dir / safe_name
+    if target.exists():
+        target = voices_dir / f"{stem}_{int(datetime.utcnow().timestamp())}{suffix}"
+
+    content = file.file.read()
+    target.write_bytes(content)
+    return {"filename": target.name}
 
 
 @router.delete("/jobs/{job_id}")
