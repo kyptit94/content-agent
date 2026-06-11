@@ -151,12 +151,16 @@ def main() -> None:
             )
 
             if notify_telegram and notify_chat_id and telegram.enabled:
+                telegram_error = None
                 if video_path:
-                    telegram.send_file_to_chat(
-                        chat_id=notify_chat_id,
-                        file_path=video_path,
-                        caption=f"[{job_id}] Video hoàn tất\nTopic: {topic}",
-                    )
+                    try:
+                        telegram.send_file_to_chat(
+                            chat_id=notify_chat_id,
+                            file_path=video_path,
+                            caption=f"[{job_id}] Video hoàn tất\nTopic: {topic}",
+                        )
+                    except Exception as exc:
+                        telegram_error = exc
                 telegram.send_to_chat(
                     chat_id=notify_chat_id,
                     text=(
@@ -166,6 +170,11 @@ def main() -> None:
                         f"Audio: {audio_path or 'n/a'}"
                     ),
                 )
+                if telegram_error:
+                    telegram.send_to_chat(
+                        chat_id=notify_chat_id,
+                        text=f"[{job_id}] Video xong nhưng không gửi được file: {telegram_error}",
+                    )
         except Exception as exc:
             queue.set_job_status(
                 job_id=job_id,

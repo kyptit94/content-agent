@@ -6,6 +6,8 @@ from app.config import settings
 
 
 class TelegramService:
+    MAX_VIDEO_UPLOAD_BYTES = 45 * 1024 * 1024
+
     def __init__(self) -> None:
         self.enabled = settings.telegram_enabled
         self.token = settings.telegram_bot_token
@@ -35,15 +37,19 @@ class TelegramService:
             raise FileNotFoundError(f"Telegram upload file not found: {file_path}")
 
         suffix = path.suffix.lower()
-        if suffix in {".mp4", ".mov", ".mkv"}:
-            endpoint = f"https://api.telegram.org/bot{self.token}/sendVideo"
-            field_name = "video"
-        elif suffix in {".mp3", ".wav", ".m4a", ".ogg"}:
+        if suffix in {".mp3", ".wav", ".m4a", ".ogg"}:
             endpoint = f"https://api.telegram.org/bot{self.token}/sendAudio"
             field_name = "audio"
         else:
             endpoint = f"https://api.telegram.org/bot{self.token}/sendDocument"
             field_name = "document"
+
+        if suffix in {".mp4", ".mov", ".mkv"}:
+            endpoint = f"https://api.telegram.org/bot{self.token}/sendVideo"
+            field_name = "video"
+            if path.stat().st_size > self.MAX_VIDEO_UPLOAD_BYTES:
+                endpoint = f"https://api.telegram.org/bot{self.token}/sendDocument"
+                field_name = "document"
 
         with path.open("rb") as file_handle:
             response = requests.post(
@@ -52,7 +58,21 @@ class TelegramService:
                 files={field_name: file_handle},
                 timeout=300,
             )
-        response.raise_for_status()
+
+        try:
+            response.raise_for_status()
+        except requests.HTTPError:
+            if endpoint.endswith("/sendVideo") and suffix in {".mp4", ".mov", ".mkv"}:
+                with path.open("rb") as file_handle:
+                    retry_response = requests.post(
+                        f"https://api.telegram.org/bot{self.token}/sendDocument",
+                        data={"chat_id": chat_id, "caption": caption or ""},
+                        files={"document": file_handle},
+                        timeout=300,
+                    )
+                retry_response.raise_for_status()
+                return
+            raise
 
     def send_message(self, text: str) -> None:
         if not self.enabled or not self.chat_id:
