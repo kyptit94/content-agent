@@ -321,9 +321,9 @@ def web_home() -> str:
         <div id="step2Card" class="card is-hidden">
           <div class="step-title">
             <span class="badge">2</span>
-            <h3>Gợi ý chủ đề</h3>
+            <h3>Gợi ý và duyệt chủ đề</h3>
           </div>
-          <p class="hint">Yêu cầu Agent gợi ý một chủ đề ngắn, cụ thể và dễ triển khai thành video.</p>
+          <p class="hint">Yêu cầu Agent gợi ý một chủ đề ngắn, cụ thể và dễ triển khai thành video. Bấm Đồng ý để chốt, bấm Từ chối để lấy chủ đề khác.</p>
           <div class="row">
             <div>
               <label>Loại nội dung</label>
@@ -340,6 +340,9 @@ def web_home() -> str:
           <button onclick="suggestTopic()">Gợi ý chủ đề</button>
           <label>Chủ đề</label>
           <textarea id="topic" rows="3" placeholder="Nhập chủ đề ở đây"></textarea>
+          <div id="topicStatus" class="status">Chưa có chủ đề để duyệt.</div>
+          <button onclick="approveTopic()">Đồng ý chủ đề này</button>
+          <button class="secondary" onclick="rejectTopic()">Từ chối, gợi ý chủ đề khác</button>
         </div>
 
         <div id="step3Card" class="card is-hidden">
@@ -414,6 +417,7 @@ def web_home() -> str:
     <script>
       const tokenInput = document.getElementById('token');
       const topicInput = document.getElementById('topic');
+      const topicStatus = document.getElementById('topicStatus');
       const progressFill = document.getElementById('progressFill');
       const agentMessage = document.getElementById('agentMessage');
 
@@ -547,11 +551,32 @@ def web_home() -> str:
             body: JSON.stringify(body),
           });
           topicInput.value = data.topic;
-          stepState[2] = true;
+          stepState[2] = false;
+          topicStatus.innerText = 'Chủ đề đã được gợi ý. Hãy đồng ý hoặc từ chối để Agent gợi ý lại.';
           updateGuide();
         } catch (error) {
           alert(error.message);
         }
+      }
+
+      function approveTopic() {
+        const value = topicInput.value.trim();
+        if (!value) {
+          alert('Bạn chưa có chủ đề để duyệt. Hãy bấm Gợi ý chủ đề trước.');
+          return;
+        }
+        stepState[2] = true;
+        topicStatus.innerText = 'Chủ đề đã được duyệt.';
+        updateGuide();
+      }
+
+      async function rejectTopic() {
+        const sourceTopic = topicInput.value.trim();
+        if (sourceTopic) {
+          topicStatus.innerText = 'Đang gợi ý một chủ đề khác...';
+        }
+        stepState[2] = false;
+        await suggestTopic();
       }
 
       function confirmVideoSource() {
@@ -600,7 +625,8 @@ def web_home() -> str:
       }
 
       topicInput.addEventListener('input', (event) => {
-        stepState[2] = Boolean(event.target.value.trim());
+        stepState[2] = false;
+        topicStatus.innerText = event.target.value.trim() ? 'Nhập tay xong, bấm Đồng ý nếu muốn chốt chủ đề này.' : 'Chưa có chủ đề để duyệt.';
         updateGuide();
       });
 
