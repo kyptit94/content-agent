@@ -9,6 +9,7 @@ from fastapi import HTTPException
 from pydantic import BaseModel
 import torch
 from TTS.api import TTS
+from TTS.config.shared_configs import BaseDatasetConfig
 from TTS.tts.configs.xtts_config import XttsConfig
 from TTS.tts.models.xtts import XttsArgs, XttsAudioConfig
 
@@ -29,7 +30,7 @@ VOICE_SAMPLE_DIR = Path(os.getenv("VOICE_SAMPLE_DIR", "/app/data/voices"))
 def _load_tts() -> TTS:
     use_gpu = os.environ.get("CUDA_VISIBLE_DEVICES", "") != ""
     if hasattr(torch.serialization, "add_safe_globals"):
-        torch.serialization.add_safe_globals([XttsConfig, XttsArgs, XttsAudioConfig])
+        torch.serialization.add_safe_globals([BaseDatasetConfig, XttsConfig, XttsArgs, XttsAudioConfig])
     return TTS(model_name=MODEL_NAME, progress_bar=False, gpu=use_gpu)
 
 
