@@ -29,6 +29,8 @@ class Settings(BaseSettings):
     auto_topic_default_mode: str = Field(default="sales", alias="AUTO_TOPIC_DEFAULT_MODE")
 
     voice_api_url: str = Field(default="http://voice:8010", alias="VOICE_API_URL")
+    edge_tts_voice: str = Field(default="vi-VN-HoaiMyNeural", alias="EDGE_TTS_VOICE")
+    edge_tts_rate: str = Field(default="+0%", alias="EDGE_TTS_RATE")
     pexels_api_key: str | None = Field(default=None, alias="PEXELS_API_KEY")
     pixabay_api_key: str | None = Field(default=None, alias="PIXABAY_API_KEY")
     video_size: str = Field(default="portrait", alias="VIDEO_SIZE")

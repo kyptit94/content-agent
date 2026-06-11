@@ -72,13 +72,19 @@ def main() -> None:
             markdown_path = storage.save_markdown(job_id=job_id, content=content)
 
             audio_path = ""
-            if create_audio and voice_sample:
-                audio_path = voice.synthesize(
-                    text=content[:2200],
-                    language=language,
-                    speaker_wav=f"/app/data/voices/{voice_sample}",
-                    output_name=f"{job_id}.wav",
-                )
+            if create_audio:
+                if voice_sample:
+                    audio_path = voice.synthesize(
+                        text=content[:2200],
+                        language=language,
+                        speaker_wav=f"/app/data/voices/{voice_sample}",
+                        output_name=f"{job_id}.wav",
+                    )
+                else:
+                    audio_path = voice.synthesize_edge(
+                        text=content[:2200],
+                        output_name=f"{job_id}.mp3",
+                    )
 
             video_path = ""
             video_source = ""

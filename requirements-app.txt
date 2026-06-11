@@ -6,3 +6,4 @@ pydantic-settings==2.10.1
 requests==2.32.4
 python-dotenv==1.1.1
 python-multipart==0.0.20
+edge-tts==6.1.12

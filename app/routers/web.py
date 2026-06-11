@@ -675,7 +675,7 @@ def web_home() -> str:
         const createAudioChecked = document.getElementById('createAudio').checked;
         const voiceSampleValue = document.getElementById('voiceSampleFilename').value.trim();
         if (createAudioChecked && !voiceSampleValue) {
-          updateVoiceSampleHint('Bạn đã bật tạo audio nhưng chưa chọn voice sample. Video có thể sẽ im tiếng.', true);
+          updateVoiceSampleHint('Bạn chưa chọn voice sample. Hệ thống sẽ tự dùng Edge TTS để tạo giọng đọc.', false);
         }
 
         if (currentStep === 1) {
@@ -808,7 +808,7 @@ def web_home() -> str:
           if (samples.length) {
             updateVoiceSampleHint(`Đã tải ${samples.length} voice sample. Chọn file để video có tiếng.`);
           } else {
-            updateVoiceSampleHint('Chưa có voice sample nào trên server. Video sẽ dễ bị im tiếng nếu không chọn file.', true);
+            updateVoiceSampleHint('Chưa có voice sample nào trên server. Hệ thống sẽ dùng Edge TTS mặc định.', false);
           }
         } catch (error) {
           updateVoiceSampleHint('Không tải được danh sách voice sample: ' + error.message, true);
@@ -1024,10 +1024,6 @@ def web_home() -> str:
         try {
           const createAudio = document.getElementById('createAudio').checked;
           const voiceSampleFilename = document.getElementById('voiceSampleFilename').value.trim();
-          if (createAudio && !voiceSampleFilename) {
-            alert('Bạn đã bật tạo audio nhưng chưa chọn voice sample. Hãy chọn file voice sample trước khi chạy job.');
-            return;
-          }
 
           const body = {
             mode: document.getElementById('mode').value,
