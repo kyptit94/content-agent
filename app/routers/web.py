@@ -1,3 +1,4 @@
+from pathlib import Path
 from datetime import datetime
 from uuid import uuid4
 
@@ -5,6 +6,7 @@ from fastapi import APIRouter
 from fastapi import Header
 from fastapi import HTTPException
 from fastapi.responses import HTMLResponse
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from pydantic import Field
 
@@ -367,6 +369,13 @@ def web_home() -> str:
         min-height: 320px;
       }
 
+      .result-actions {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        margin-top: 10px;
+      }
+
       .job-error {
         margin-top: 10px;
         color: #9a3412;
@@ -509,6 +518,7 @@ def web_home() -> str:
 
           <button onclick="createJob()">Chạy job</button>
           <div id="jobResult" class="status">Chưa tạo job.</div>
+          <div id="jobResultActions" class="result-actions"></div>
         </div>
 
         <div id="step5Card" class="card is-hidden">
@@ -539,6 +549,8 @@ def web_home() -> str:
       const topicStatus = document.getElementById('topicStatus');
       const progressFill = document.getElementById('progressFill');
       const agentMessage = document.getElementById('agentMessage');
+      const lastJobKey = 'lastJobId';
+      let activeVideoObjectUrl = '';
 
       tokenInput.value = localStorage.getItem('adminToken') || '';
 
@@ -647,6 +659,27 @@ def web_home() -> str:
         alert('Token đã được lưu');
       }
 
+      function setLatestJob(jobId) {
+        localStorage.setItem(lastJobKey, jobId);
+        renderLatestJobAction(jobId);
+      }
+
+      function getLatestJob() {
+        return localStorage.getItem(lastJobKey) || '';
+      }
+
+      function renderLatestJobAction(jobId) {
+        const container = document.getElementById('jobResultActions');
+        if (!jobId) {
+          container.innerHTML = '';
+          return;
+        }
+        container.innerHTML = `
+          <button class="secondary" onclick="previewJob('${escapeHtml(jobId)}')">Xem thử video</button>
+          <button class="secondary" onclick="viewJob('${escapeHtml(jobId)}')">Xem chi tiết</button>
+        `;
+      }
+
       function escapeHtml(value) {
         return String(value)
           .replaceAll('&', '&amp;')
@@ -665,6 +698,16 @@ def web_home() -> str:
           throw new Error(await response.text());
         }
         return await response.json();
+      }
+
+      async function fetchVideoBlob(jobId) {
+        const response = await fetch(`/web/jobs/${jobId}/video`, {
+          headers: { 'x-admin-token': getToken() },
+        });
+        if (!response.ok) {
+          throw new Error(await response.text());
+        }
+        return await response.blob();
       }
 
       function renderJobs(items) {
@@ -722,26 +765,54 @@ def web_home() -> str:
         }).join('');
       }
 
-      function openJobModal(job) {
+      function openJobModal(job, videoObjectUrl = '') {
+        if (activeVideoObjectUrl) {
+          URL.revokeObjectURL(activeVideoObjectUrl);
+          activeVideoObjectUrl = '';
+        }
+        if (videoObjectUrl) {
+          activeVideoObjectUrl = videoObjectUrl;
+        }
+
         const backdrop = document.getElementById('jobModalBackdrop');
         const title = document.getElementById('jobModalTitle');
         const body = document.getElementById('jobModalBody');
         title.innerText = `Job ${job.job_id || ''}`;
-        body.innerHTML = `<pre>${escapeHtml(JSON.stringify(job, null, 2))}</pre>`;
+        const hasVideo = Boolean(job.outputs && job.outputs.video_path);
+        const videoBlock = hasVideo
+          ? `<video controls autoplay playsinline style="width:100%;max-height:60vh;border-radius:12px;background:#000" src="${escapeHtml(videoObjectUrl || '')}"></video>`
+          : '<div class="status">Job chưa có video để xem thử. Hãy đợi hoàn tất hoặc kiểm tra lỗi.</div>';
+        body.innerHTML = `
+          ${videoBlock}
+          <div style="margin-top:12px"><pre>${escapeHtml(JSON.stringify(job, null, 2))}</pre></div>
+        `;
         backdrop.classList.add('open');
       }
 
       function closeJobModal() {
+        if (activeVideoObjectUrl) {
+          URL.revokeObjectURL(activeVideoObjectUrl);
+          activeVideoObjectUrl = '';
+        }
         document.getElementById('jobModalBackdrop').classList.remove('open');
       }
 
       async function viewJob(jobId) {
         try {
           const data = await api(`/web/jobs/${jobId}`);
-          openJobModal(data);
+          let videoObjectUrl = '';
+          if (data.outputs && data.outputs.video_path) {
+            const blob = await fetchVideoBlob(jobId);
+            videoObjectUrl = URL.createObjectURL(blob);
+          }
+          openJobModal(data, videoObjectUrl);
         } catch (error) {
           alert(error.message);
         }
+      }
+
+      async function previewJob(jobId) {
+        return await viewJob(jobId);
       }
 
       async function deleteJob(jobId) {
@@ -838,6 +909,7 @@ def web_home() -> str:
           stepState[4] = true;
           stepState[5] = true;
           document.getElementById('jobResult').innerText = 'Đã tạo job: ' + data.job_id;
+          setLatestJob(data.job_id);
           updateGuide();
           await loadJobs();
         } catch (error) {
@@ -861,6 +933,7 @@ def web_home() -> str:
       });
 
       updateGuide();
+      renderLatestJobAction(getLatestJob());
       loadJobs();
     </script>
   </body>
@@ -924,61 +997,78 @@ def list_jobs(limit: int = 20, x_admin_token: str | None = Header(default=None))
 
 @router.delete("/jobs/{job_id}")
 def delete_job(job_id: str, x_admin_token: str | None = Header(default=None)) -> dict:
-  _check_token(x_admin_token)
-  queue.delete_job(job_id)
-  return {"job_id": job_id, "status": "deleted"}
+    _check_token(x_admin_token)
+    queue.delete_job(job_id)
+    return {"job_id": job_id, "status": "deleted"}
 
 
 @router.post("/jobs/{job_id}/retry")
 def retry_job(job_id: str, x_admin_token: str | None = Header(default=None)) -> dict:
-  _check_token(x_admin_token)
+    _check_token(x_admin_token)
 
-  item = queue.get_job_status(job_id)
-  if not item:
-    raise HTTPException(status_code=404, detail="job not found")
+    item = queue.get_job_status(job_id)
+    if not item:
+        raise HTTPException(status_code=404, detail="job not found")
 
-  original_payload = item.get("payload") or {}
-  if not isinstance(original_payload, dict):
-    original_payload = {}
+    original_payload = item.get("payload") or {}
+    if not isinstance(original_payload, dict):
+        original_payload = {}
 
-  if not original_payload:
-    original_payload = {
-      "mode": item.get("mode", "sales"),
-      "topic": item.get("topic", ""),
-      "language": item.get("language", "vi"),
-      "tone": item.get("tone", "friendly"),
-      "use_gemini_refine": item.get("use_gemini_refine", False),
-      "create_audio": item.get("create_audio", False),
-      "create_video": item.get("create_video", True),
-      "video_source_type": item.get("video_source_type", "self"),
-      "video_keyword": item.get("video_keyword"),
-      "user_video_path": item.get("user_video_path"),
-      "voice_sample_filename": item.get("voice_sample_filename"),
-      "notify_telegram": item.get("notify_telegram", True),
-      "telegram_chat_id": item.get("telegram_chat_id"),
-    }
+    if not original_payload:
+        original_payload = {
+            "mode": item.get("mode", "sales"),
+            "topic": item.get("topic", ""),
+            "language": item.get("language", "vi"),
+            "tone": item.get("tone", "friendly"),
+            "use_gemini_refine": item.get("use_gemini_refine", False),
+            "create_audio": item.get("create_audio", False),
+            "create_video": item.get("create_video", True),
+            "video_source_type": item.get("video_source_type", "self"),
+            "video_keyword": item.get("video_keyword"),
+            "user_video_path": item.get("user_video_path"),
+            "voice_sample_filename": item.get("voice_sample_filename"),
+            "notify_telegram": item.get("notify_telegram", True),
+            "telegram_chat_id": item.get("telegram_chat_id"),
+        }
 
-  retry_payload = dict(original_payload)
-  retry_payload["job_id"] = str(uuid4())
-  retry_payload["created_at"] = datetime.utcnow().isoformat()
-  retry_payload["revision_of_job_id"] = job_id
-  retry_payload["feedback_round"] = int(item.get("feedback_round", 0)) + 1
+    retry_payload = dict(original_payload)
+    retry_payload["job_id"] = str(uuid4())
+    retry_payload["created_at"] = datetime.utcnow().isoformat()
+    retry_payload["revision_of_job_id"] = job_id
+    retry_payload["feedback_round"] = int(item.get("feedback_round", 0)) + 1
 
-  queue.enqueue(retry_payload)
-  queue.set_job_status(
-    job_id=retry_payload["job_id"],
-    payload={
-      "job_id": retry_payload["job_id"],
-      "status": "queued",
-      "topic": retry_payload.get("topic"),
-      "mode": retry_payload.get("mode"),
-      "queued_at": datetime.utcnow().isoformat(),
-      "revision_of_job_id": job_id,
-      "feedback_round": retry_payload["feedback_round"],
-      "payload": retry_payload,
-    },
-  )
-  return {"job_id": retry_payload["job_id"], "status": "queued"}
+    queue.enqueue(retry_payload)
+    queue.set_job_status(
+        job_id=retry_payload["job_id"],
+        payload={
+            "job_id": retry_payload["job_id"],
+            "status": "queued",
+            "topic": retry_payload.get("topic"),
+            "mode": retry_payload.get("mode"),
+            "queued_at": datetime.utcnow().isoformat(),
+            "revision_of_job_id": job_id,
+            "feedback_round": retry_payload["feedback_round"],
+            "payload": retry_payload,
+        },
+    )
+    return {"job_id": retry_payload["job_id"], "status": "queued"}
+@router.get("/jobs/{job_id}/video")
+def get_job_video(job_id: str, x_admin_token: str | None = Header(default=None)) -> FileResponse:
+    _check_token(x_admin_token)
+
+    item = queue.get_job_status(job_id)
+    if not item:
+        raise HTTPException(status_code=404, detail="job not found")
+
+    video_path = (item.get("outputs") or {}).get("video_path")
+    if not video_path:
+        raise HTTPException(status_code=404, detail="video not found")
+
+    path = Path(video_path)
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="video file missing")
+
+    return FileResponse(path, media_type="video/mp4", filename=path.name)
 
 
 @router.get("/jobs/{job_id}")
