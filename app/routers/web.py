@@ -31,7 +31,7 @@ class CreateWebJobRequest(BaseModel):
     language: str = "vi"
     tone: str = "friendly"
     use_gemini_refine: bool = False
-    create_audio: bool = False
+    create_audio: bool = True
     create_video: bool = True
     video_source_type: str = "self"
     video_keyword: str | None = None
@@ -498,19 +498,29 @@ def web_home() -> str:
 
           <div class="row">
             <div>
+              <label>Voice sample</label>
+              <input id="voiceSampleFilename" list="voiceSamples" placeholder="chọn hoặc gõ tên file .wav" />
+              <datalist id="voiceSamples"></datalist>
+              <div id="voiceSampleHint" class="status">Tải danh sách voice sample để video có tiếng.</div>
+            </div>
+            <div>
               <label>Đường dẫn video nguồn</label>
               <input id="videoPath" placeholder="/app/data/uploads/video.mp4" />
             </div>
+          </div>
+
+          <div class="row">
             <div>
               <label>Từ khóa video (internet)</label>
               <input id="videoKeyword" placeholder="đọc sách, bàn học, thư viện..." />
             </div>
+            <div></div>
           </div>
 
-          <div id="videoInputHint" class="status">Nếu chọn video có sẵn, hãy dán đường dẫn file video vào ô bên trái.</div>
+          <div id="videoInputHint" class="status">Nếu chọn video có sẵn, hãy dán đường dẫn file video vào ô bên phải.</div>
 
           <div class="check-grid">
-            <label class="check-item"><input id="createAudio" type="checkbox" /> Tạo audio</label>
+            <label class="check-item"><input id="createAudio" type="checkbox" checked /> Tạo audio</label>
             <label class="check-item"><input id="useGemini" type="checkbox" /> Gemini tinh chỉnh</label>
             <label class="check-item"><input id="notifyTelegram" type="checkbox" checked /> Báo Telegram</label>
             <label class="check-item"><input id="preserveQuality" type="checkbox" checked disabled /> Giữ chất lượng video</label>
@@ -625,6 +635,12 @@ def web_home() -> str:
         const completedCount = Object.values(stepState).filter(Boolean).length;
         progressFill.style.width = ((completedCount / 5) * 100) + '%';
 
+        const createAudioChecked = document.getElementById('createAudio').checked;
+        const voiceSampleValue = document.getElementById('voiceSampleFilename').value.trim();
+        if (createAudioChecked && !voiceSampleValue) {
+          updateVoiceSampleHint('Bạn đã bật tạo audio nhưng chưa chọn voice sample. Video có thể sẽ im tiếng.', true);
+        }
+
         if (currentStep === 1) {
           agentMessage.innerText = 'Bước 1: lưu token để Agent có quyền gọi API.';
         } else if (currentStep === 2) {
@@ -678,6 +694,34 @@ def web_home() -> str:
           <button class="secondary" onclick="previewJob('${escapeHtml(jobId)}')">Xem thử video</button>
           <button class="secondary" onclick="viewJob('${escapeHtml(jobId)}')">Xem chi tiết</button>
         `;
+      }
+
+      function updateVoiceSampleHint(message, isWarning = false) {
+        const hint = document.getElementById('voiceSampleHint');
+        hint.innerText = message;
+        hint.style.background = isWarning ? '#fff1ea' : '#f2f6ff';
+        hint.style.borderColor = isWarning ? '#ffd7c2' : '#d8e2f5';
+        hint.style.color = isWarning ? '#9a3412' : '#294268';
+      }
+
+      async function loadVoiceSamples() {
+        try {
+          const data = await api('/web/voice-samples');
+          const samples = data.items || [];
+          const datalist = document.getElementById('voiceSamples');
+          const voiceInput = document.getElementById('voiceSampleFilename');
+          datalist.innerHTML = samples.map((item) => `<option value="${escapeHtml(item)}"></option>`).join('');
+          if (samples.length && !voiceInput.value.trim()) {
+            voiceInput.value = samples[0];
+          }
+          if (samples.length) {
+            updateVoiceSampleHint(`Đã tải ${samples.length} voice sample. Chọn file để video có tiếng.`);
+          } else {
+            updateVoiceSampleHint('Chưa có voice sample nào trên server. Video sẽ dễ bị im tiếng nếu không chọn file.', true);
+          }
+        } catch (error) {
+          updateVoiceSampleHint('Không tải được danh sách voice sample: ' + error.message, true);
+        }
       }
 
       function escapeHtml(value) {
@@ -887,17 +931,25 @@ def web_home() -> str:
 
       async function createJob() {
         try {
+          const createAudio = document.getElementById('createAudio').checked;
+          const voiceSampleFilename = document.getElementById('voiceSampleFilename').value.trim();
+          if (createAudio && !voiceSampleFilename) {
+            alert('Bạn đã bật tạo audio nhưng chưa chọn voice sample. Hãy chọn file voice sample trước khi chạy job.');
+            return;
+          }
+
           const body = {
             mode: document.getElementById('mode').value,
             topic: topicInput.value,
             language: document.getElementById('language').value,
             tone: document.getElementById('tone').value,
             use_gemini_refine: document.getElementById('useGemini').checked,
-            create_audio: document.getElementById('createAudio').checked,
+            create_audio: createAudio,
             create_video: true,
             video_source_type: document.getElementById('videoSourceType').value,
             user_video_path: document.getElementById('videoPath').value || null,
             video_keyword: document.getElementById('videoKeyword').value || null,
+            voice_sample_filename: voiceSampleFilename || null,
             notify_telegram: document.getElementById('notifyTelegram').checked,
             telegram_chat_id: document.getElementById('telegramChatId').value || null,
           };
@@ -934,6 +986,7 @@ def web_home() -> str:
 
       updateGuide();
       renderLatestJobAction(getLatestJob());
+      loadVoiceSamples();
       loadJobs();
     </script>
   </body>
@@ -983,7 +1036,7 @@ def create_web_job(body: CreateWebJobRequest, x_admin_token: str | None = Header
             "topic": body.topic,
             "mode": mode,
             "queued_at": datetime.utcnow().isoformat(),
-        "payload": payload.model_dump(),
+            "payload": payload.model_dump(),
         },
     )
     return {"job_id": job_id, "status": "queued"}
@@ -993,6 +1046,22 @@ def create_web_job(body: CreateWebJobRequest, x_admin_token: str | None = Header
 def list_jobs(limit: int = 20, x_admin_token: str | None = Header(default=None)) -> dict:
     _check_token(x_admin_token)
     return {"items": queue.list_recent_jobs(limit=limit)}
+
+
+@router.get("/voice-samples")
+def list_voice_samples(x_admin_token: str | None = Header(default=None)) -> dict:
+    _check_token(x_admin_token)
+
+    voices_dir = Path("/app/data/voices")
+    if not voices_dir.exists():
+        return {"items": []}
+
+    allowed_ext = {".wav", ".mp3", ".m4a", ".ogg", ".flac"}
+    items = sorted(
+        path.name for path in voices_dir.iterdir()
+        if path.is_file() and path.suffix.lower() in allowed_ext
+    )
+    return {"items": items}
 
 
 @router.delete("/jobs/{job_id}")
