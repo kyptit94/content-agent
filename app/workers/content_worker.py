@@ -41,6 +41,7 @@ def main() -> None:
         video_keyword = payload.get("video_keyword") or topic
         user_video_path = payload.get("user_video_path")
         voice_sample = payload.get("voice_sample_filename")
+        edge_tts_voice = payload.get("edge_tts_voice") or settings.edge_tts_voice
         feedback_note = payload.get("feedback_note")
         feedback_round = payload.get("feedback_round", 0)
         revision_of_job_id = payload.get("revision_of_job_id")
@@ -84,6 +85,7 @@ def main() -> None:
                     audio_path = voice.synthesize_edge(
                         text=content[:2200],
                         output_name=f"{job_id}.mp3",
+                        voice_name=edge_tts_voice,
                     )
 
             video_path = ""

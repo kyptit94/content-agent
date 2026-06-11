@@ -38,6 +38,7 @@ class CreateWebJobRequest(BaseModel):
     video_source_type: str = "self"
     video_keyword: str | None = None
     voice_sample_filename: str | None = None
+    edge_tts_voice: str | None = None
     user_video_path: str | None = None
     notify_telegram: bool = True
     telegram_chat_id: str | None = None
@@ -536,6 +537,11 @@ def web_home() -> str:
 
               <input id="voiceSampleFilename" list="voiceSamples" placeholder="voice đã chọn" />
               <datalist id="voiceSamples"></datalist>
+              <label>Giọng Edge TTS (khi không có voice sample)</label>
+              <select id="edgeTtsVoice">
+                <option value="vi-VN-HoaiMyNeural">Nữ - HoaiMy (vi-VN-HoaiMyNeural)</option>
+                <option value="vi-VN-NamMinhNeural">Nam - NamMinh (vi-VN-NamMinhNeural)</option>
+              </select>
               <div id="voiceSampleHint" class="status">Tải danh sách voice sample để video có tiếng.</div>
             </div>
             <div>
@@ -602,6 +608,7 @@ def web_home() -> str:
       let activeVideoObjectUrl = '';
 
       tokenInput.value = localStorage.getItem('adminToken') || '';
+      document.getElementById('edgeTtsVoice').value = 'vi-VN-HoaiMyNeural';
 
       const stepState = {
         1: Boolean(tokenInput.value.trim()),
@@ -1037,6 +1044,7 @@ def web_home() -> str:
             user_video_path: document.getElementById('videoPath').value || null,
             video_keyword: document.getElementById('videoKeyword').value || null,
             voice_sample_filename: voiceSampleFilename || null,
+            edge_tts_voice: document.getElementById('edgeTtsVoice').value || null,
             notify_telegram: document.getElementById('notifyTelegram').checked,
             telegram_chat_id: document.getElementById('telegramChatId').value || null,
           };
@@ -1110,6 +1118,7 @@ def create_web_job(body: CreateWebJobRequest, x_admin_token: str | None = Header
         video_keyword=body.video_keyword,
         user_video_path=body.user_video_path,
         voice_sample_filename=body.voice_sample_filename,
+        edge_tts_voice=body.edge_tts_voice,
         notify_telegram=body.notify_telegram,
         telegram_chat_id=body.telegram_chat_id,
     )
@@ -1207,6 +1216,7 @@ def retry_job(job_id: str, x_admin_token: str | None = Header(default=None)) -> 
             "video_keyword": item.get("video_keyword"),
             "user_video_path": item.get("user_video_path"),
             "voice_sample_filename": item.get("voice_sample_filename"),
+            "edge_tts_voice": item.get("edge_tts_voice", settings.edge_tts_voice),
             "notify_telegram": item.get("notify_telegram", True),
             "telegram_chat_id": item.get("telegram_chat_id"),
         }

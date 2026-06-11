@@ -27,13 +27,13 @@ class VoiceService:
         response.raise_for_status()
         return response.json().get("audio_path", "")
 
-    def synthesize_edge(self, text: str, output_name: str) -> str:
+    def synthesize_edge(self, text: str, output_name: str, voice_name: str | None = None) -> str:
         output_path = self.output_dir / output_name
 
         async def _run() -> None:
             communicate = edge_tts.Communicate(
                 text=text,
-                voice=settings.edge_tts_voice,
+                voice=voice_name or settings.edge_tts_voice,
                 rate=settings.edge_tts_rate,
             )
             await communicate.save(str(output_path))
