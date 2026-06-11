@@ -1,6 +1,8 @@
 import asyncio
+import os
 import time
 from pathlib import Path
+from urllib.parse import urlparse
 
 import requests
 
@@ -20,18 +22,48 @@ class VoiceService:
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
     def synthesize(self, text: str, language: str, speaker_wav: str, output_name: str) -> str:
-        response = requests.post(
-            f"{self.base_url}/synthesize",
-            json={
-                "text": text,
-                "language": language,
-                "speaker_wav": speaker_wav,
-                "output_name": output_name,
-            },
-            timeout=300,
-        )
-        response.raise_for_status()
-        return response.json().get("audio_path", "")
+        payload = {
+            "text": text,
+            "language": language,
+            "speaker_wav": speaker_wav,
+            "output_name": output_name,
+        }
+
+        last_error: Exception | None = None
+        for base_url in self._candidate_base_urls():
+            try:
+                response = requests.post(
+                    f"{base_url}/synthesize",
+                    json=payload,
+                    timeout=300,
+                )
+                response.raise_for_status()
+                return response.json().get("audio_path", "")
+            except requests.exceptions.RequestException as exc:
+                last_error = exc
+
+        if last_error:
+            raise last_error
+        return ""
+
+    def _candidate_base_urls(self) -> list[str]:
+        urls = [self.base_url]
+        parsed = urlparse(self.base_url)
+        hostname = (parsed.hostname or "").lower()
+        running_in_container = Path("/.dockerenv").exists() or os.environ.get("container") is not None
+
+        if not running_in_container and hostname in {"voice", "ai_agent_voice"}:
+            scheme = parsed.scheme or "http"
+            port = f":{parsed.port}" if parsed.port else ""
+            fallback_urls = [
+                f"{scheme}://127.0.0.1{port}",
+                f"{scheme}://localhost{port}",
+            ]
+            for fallback_url in fallback_urls:
+                if fallback_url not in urls:
+                    urls.append(fallback_url)
+
+        return urls
 
     def synthesize_edge(self, text: str, output_name: str, voice_name: str | None = None) -> str:
         try:
