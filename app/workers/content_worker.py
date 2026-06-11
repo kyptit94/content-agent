@@ -90,11 +90,14 @@ def main() -> None:
                         output_name=f"{job_id}.wav",
                     )
                 else:
-                    audio_path = voice.synthesize_edge(
-                        text=content[:2200],
-                        output_name=f"{job_id}.mp3",
-                        voice_name=edge_tts_voice,
-                    )
+                    try:
+                        audio_path = voice.synthesize_edge(
+                            text=content[:2200],
+                            output_name=f"{job_id}.mp3",
+                            voice_name=edge_tts_voice,
+                        )
+                    except Exception:
+                        audio_path = ""
 
             video_path = ""
             video_source = ""
