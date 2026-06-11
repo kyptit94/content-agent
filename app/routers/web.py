@@ -376,6 +376,13 @@ def web_home() -> str:
         margin-top: 10px;
       }
 
+      .hero-actions {
+        margin-top: 12px;
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+
       .job-error {
         margin-top: 10px;
         color: #9a3412;
@@ -414,13 +421,15 @@ def web_home() -> str:
           <span id="chip2" class="step-chip">2. Gợi ý chủ đề</span>
           <span id="chip3" class="step-chip">3. Chọn nguồn video</span>
           <span id="chip4" class="step-chip">4. Hoàn thiện job</span>
-          <span id="chip5" class="step-chip">5. Theo dõi kết quả</span>
         </div>
 
         <div class="agent-box">
           <div class="agent-head">Hướng dẫn của AI Agent</div>
           <div id="agentMessage" class="agent-message">Bắt đầu từ Bước 1: nhập token rồi bấm Lưu token.</div>
           <div class="progress-track"><div id="progressFill" class="progress-fill"></div></div>
+          <div class="hero-actions">
+            <button class="secondary" onclick="openResultsModal()">Theo dõi kết quả</button>
+          </div>
         </div>
       </div>
 
@@ -531,12 +540,16 @@ def web_home() -> str:
           <div id="jobResultActions" class="result-actions"></div>
         </div>
 
-        <div id="step5Card" class="card is-hidden">
-          <div class="step-title">
-            <span class="badge">5</span>
-            <h3>Job gần đây</h3>
-          </div>
-          <p class="hint">Theo dõi trạng thái đang chờ, đang chạy, hoàn tất hoặc thất bại.</p>
+      </div>
+    </div>
+
+    <div id="resultsModalBackdrop" class="modal-backdrop" onclick="if (event.target === this) closeResultsModal()">
+      <div class="modal">
+        <div class="modal-head">
+          <h3 class="modal-title">Theo dõi kết quả job</h3>
+          <button class="modal-close" onclick="closeResultsModal()">Đóng</button>
+        </div>
+        <div class="modal-body">
           <button class="secondary" onclick="loadJobs()">Làm mới danh sách job</button>
           <div id="jobsList" class="jobs-list"></div>
         </div>
@@ -569,11 +582,10 @@ def web_home() -> str:
         2: false,
         3: false,
         4: false,
-        5: false,
       };
 
       function setStepActive(stepNumber) {
-        for (let i = 1; i <= 5; i++) {
+        for (let i = 1; i <= 4; i++) {
           const chip = document.getElementById('chip' + i);
           chip.classList.remove('active');
           chip.classList.remove('done');
@@ -594,8 +606,7 @@ def web_home() -> str:
         if (!stepState[1]) return 1;
         if (!stepState[2]) return 2;
         if (!stepState[3]) return 3;
-        if (!stepState[4]) return 4;
-        return 5;
+        return 4;
       }
 
       function updateVideoSourceHint() {
@@ -633,7 +644,7 @@ def web_home() -> str:
       function updateGuide() {
         const currentStep = getCurrentStep();
         const completedCount = Object.values(stepState).filter(Boolean).length;
-        progressFill.style.width = ((completedCount / 5) * 100) + '%';
+        progressFill.style.width = ((completedCount / 4) * 100) + '%';
 
         const createAudioChecked = document.getElementById('createAudio').checked;
         const voiceSampleValue = document.getElementById('voiceSampleFilename').value.trim();
@@ -649,8 +660,6 @@ def web_home() -> str:
           agentMessage.innerText = 'Bước 3: chọn bạn sẽ dùng video có sẵn hay video tìm trên internet.';
         } else if (currentStep === 4) {
           agentMessage.innerText = 'Bước 4: hoàn thiện đầu vào và bấm Chạy job.';
-        } else {
-          agentMessage.innerText = 'Bước 5: theo dõi job và làm mới để xem trạng thái mới nhất.';
         }
 
         setStepActive(currentStep);
@@ -658,9 +667,17 @@ def web_home() -> str:
         setCardVisible('step2Card', currentStep === 2);
         setCardVisible('step3Card', currentStep === 3);
         setCardVisible('step4Card', currentStep === 4);
-        setCardVisible('step5Card', currentStep === 5);
         updateVideoSourceHint();
         syncStep4Inputs();
+      }
+
+      function openResultsModal() {
+        document.getElementById('resultsModalBackdrop').classList.add('open');
+        loadJobs();
+      }
+
+      function closeResultsModal() {
+        document.getElementById('resultsModalBackdrop').classList.remove('open');
       }
 
       function getToken() {
@@ -959,7 +976,6 @@ def web_home() -> str:
             body: JSON.stringify(body),
           });
           stepState[4] = true;
-          stepState[5] = true;
           document.getElementById('jobResult').innerText = 'Đã tạo job: ' + data.job_id;
           setLatestJob(data.job_id);
           updateGuide();
