@@ -72,6 +72,25 @@ class LLMService:
         except Exception:
             return
 
+    def extract_video_keywords(self, content: str, language: str = "en") -> list[str]:
+        """Extract 3-5 visual keywords from content for stock video search."""
+        prompt = (
+            "From the text below, extract 3-5 English keywords "
+            "that would find relevant stock footage videos. "
+            "Return only comma-separated keywords, no explanation.\n\n"
+            f"Text: {content[:1000]}"
+        )
+        try:
+            result = self._call_ollama(
+                prompt=prompt,
+                temperature=0.3,
+                max_tokens=50,
+            )
+            keywords = [kw.strip().lower() for kw in result.split(",") if kw.strip()]
+            return keywords[:5] if keywords else ["abstract", "background"]
+        except Exception:
+            return ["abstract", "ambient", "landscape"]
+
     @staticmethod
     def _normalize_topic_line(value: str) -> str:
         return value.splitlines()[0].strip().strip("-•1234567890. ")[:180]
@@ -103,14 +122,14 @@ class LLMService:
             return True
         return self._is_risky_topic(topic)
 
-    def _call_ollama(self, prompt: str, num_predict: int = 2000) -> str:
+    def _call_ollama(self, prompt: str, num_predict: int = 2000, temperature: float = 0.85) -> str:
         response = requests.post(
             f"{self.ollama_base_url}/api/generate",
             json={
                 "model": settings.local_llm_model,
                 "prompt": prompt,
                 "stream": False,
-                "options": {"temperature": 0.85, "num_predict": num_predict, "top_p": 0.92},
+                "options": {"temperature": temperature, "num_predict": num_predict, "top_p": 0.92},
             },
             timeout=300,
         )

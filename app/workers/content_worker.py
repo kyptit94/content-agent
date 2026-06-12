@@ -119,16 +119,20 @@ def main() -> None:
             video_path = ""
             video_source = ""
             if create_video:
-                set_running_status(stage="preparing_video", percent=55, detail="Preparing video source")
+                set_running_status(stage="preparing_video", percent=55, detail="Fetching stock footage")
                 source_path = ""
                 if video_source_type == "internet":
-                    clip_path, clip_source = stock_video.fetch(
-                        keyword=video_keyword,
+                    # AI extracts visual keywords from content for diverse clips
+                    keywords = llm.extract_video_keywords(content, language)
+                    clip_paths = stock_video.fetch_multiple(
+                        keywords=keywords,
                         job_id=job_id,
                         preferred_size=settings.video_size,
                     )
-                    source_path = clip_path
-                    video_source = clip_source
+                    concat_out = Path("/app/data/outputs") / f"{job_id}_concat.mp4"
+                    target_dur = audio_duration_sec or 45.0
+                    source_path = StockVideoService.concat_clips(clip_paths, concat_out, target_dur)
+                    video_source = f"pexels/pixabay: {', '.join(keywords)}"
                 else:
                     if not user_video_path or not Path(user_video_path).exists():
                         raise RuntimeError(

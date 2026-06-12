@@ -1,4 +1,5 @@
 import json
+import subprocess
 import time
 from pathlib import Path
 
@@ -52,6 +53,52 @@ class StockVideoService:
             "created_at": int(time.time()),
         }
         self._save_index()
+
+    def fetch_multiple(
+        self, keywords: list[str], job_id: str, preferred_size: str = "portrait"
+    ) -> list[str]:
+        """Fetch multiple clips from different keywords, returning list of clip paths."""
+        clip_paths = []
+        for i, kw in enumerate(keywords):
+            try:
+                path, _src = self.fetch(keyword=kw, job_id=f"{job_id}_{i}", preferred_size=preferred_size)
+                clip_paths.append(path)
+            except Exception:
+                continue
+
+        if not clip_paths:
+            raise RuntimeError("Failed to fetch any clips")
+
+        return clip_paths
+
+    @staticmethod
+    def concat_clips(clip_paths: list[str], output_path: Path, target_sec: float = 60.0) -> str:
+        """Concatenate multiple clips into one video, trimming to target_sec total."""
+        if len(clip_paths) == 1:
+            return clip_paths[0]
+
+        # Write concat file list
+        concat_file = output_path.with_name(f"{output_path.stem}_concat.txt")
+        with concat_file.open("w") as f:
+            for p in clip_paths:
+                f.write(f"file '{p}'\n")
+
+        try:
+            subprocess.run(
+                [
+                    "ffmpeg", "-y",
+                    "-f", "concat", "-safe", "0",
+                    "-i", str(concat_file),
+                    "-t", str(target_sec),
+                    "-c", "copy",
+                    str(output_path),
+                ],
+                check=True, capture_output=True, text=True, timeout=120,
+            )
+        finally:
+            concat_file.unlink(missing_ok=True)
+
+        return str(output_path)
 
     def fetch(self, keyword: str, job_id: str, preferred_size: str = "portrait") -> tuple[str, str]:
         key = self._cache_key(keyword=keyword, preferred_size=preferred_size)
