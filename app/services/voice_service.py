@@ -29,22 +29,9 @@ class VoiceService:
         self.base_url = settings.voice_api_url.rstrip("/")
         self.output_dir = Path("/app/data/outputs")
         self.output_dir.mkdir(parents=True, exist_ok=True)
-        self.kokoro_available = False
-
-    def _check_kokoro(self) -> bool:
-        """Lazy-check if Kokoro is importable."""
-        if not self.kokoro_available:
-            try:
-                import kokoro  # noqa: F401
-                self.kokoro_available = True
-            except ImportError:
-                pass
-        return self.kokoro_available
 
     def synthesize_kokoro(self, text: str, output_name: str, voice_name: str | None = None) -> str:
-        """Synthesize using Kokoro local TTS (for English)."""
-        if not self._check_kokoro():
-            raise RuntimeError("kokoro not installed")
+        """Synthesize using Kokoro local TTS (for English) via voice service API."""
         output_path = self.output_dir / output_name
         payload = {
             "text": text,
@@ -131,7 +118,7 @@ class VoiceService:
                 response = requests.post(
                     f"{base_url}/synthesize",
                     json=payload,
-                    timeout=300,
+                    timeout=120,
                 )
                 response.raise_for_status()
                 return response.json().get("audio_path", "")
