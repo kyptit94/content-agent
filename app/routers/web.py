@@ -1050,6 +1050,18 @@ def web_home() -> str:
         }
       }
 
+      async function approveJob(jobId) {
+        try {
+          const data = await api(`/web/jobs/${jobId}/approve`, {
+            method: 'POST',
+          });
+          document.getElementById('jobResult').innerText = 'Approved job: ' + data.job_id + ' — composing video...';
+          await loadJobs();
+        } catch (error) {
+          alert(error.message);
+        }
+      }
+
       async function suggestTopic() {
         try {
           const body = {
