@@ -24,13 +24,13 @@ llm = LLMService()
 
 class SuggestTopicRequest(BaseModel):
     mode: str = "sales"
-    language: str = "vi"
+    language: str = "en"
 
 
 class CreateWebJobRequest(BaseModel):
     mode: str = "sales"
     topic: str = Field(min_length=3, max_length=500)
-    language: str = "vi"
+    language: str = "en"
     tone: str = "friendly"
     use_gemini_refine: bool = False
     create_audio: bool = True
@@ -61,7 +61,7 @@ def web_home() -> str:
   <head>
     <meta charset=\"utf-8\" />
     <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\" />
-    <title>AI Agent Điều Phối Nội Dung</title>
+    <title>AI Agent Content Shorts (EN)</title>
     <style>
       :root {
         --bg: #f6f7fb;
@@ -439,21 +439,21 @@ def web_home() -> str:
   <body>
     <div class="wrap">
       <div class="hero">
-        <h1>AI Agent Điều Phối Nội Dung</h1>
-        <p>Trợ lý này sẽ dẫn bạn đi từng bước để lên ý tưởng, chọn nguồn video và chạy job rõ ràng.</p>
+        <h1>AI Agent Content Shorts (EN)</h1>
+        <p>Generate short videos with Kokoro emotional TTS + Edge TTS fallback.</p>
         <div class="step-flow">
-          <span id="chip1" class="step-chip">1. Xác thực</span>
-          <span id="chip2" class="step-chip">2. Gợi ý chủ đề</span>
-          <span id="chip3" class="step-chip">3. Chọn nguồn video</span>
-          <span id="chip4" class="step-chip">4. Hoàn thiện job</span>
+          <span id="chip1" class="step-chip">1. Auth</span>
+          <span id="chip2" class="step-chip">2. Topic</span>
+          <span id="chip3" class="step-chip">3. Video Source</span>
+          <span id="chip4" class="step-chip">4. Run</span>
         </div>
 
         <div class="agent-box">
-          <div class="agent-head">Hướng dẫn của AI Agent</div>
-          <div id="agentMessage" class="agent-message">Bắt đầu từ Bước 1: nhập token rồi bấm Lưu token.</div>
+          <div class="agent-head">AI Guide</div>
+          <div id="agentMessage" class="agent-message">Step 1: Save your admin token to access APIs.</div>
           <div class="progress-track"><div id="progressFill" class="progress-fill"></div></div>
           <div class="hero-actions">
-            <button class="secondary" onclick="openResultsModal()">Theo dõi kết quả</button>
+            <button class="secondary" onclick="openResultsModal()">View Results</button>
           </div>
         </div>
       </div>
@@ -462,135 +462,143 @@ def web_home() -> str:
         <div id="step1Card" class="card">
           <div class="step-title">
             <span class="badge">1</span>
-            <h3>Xác thực Admin Token</h3>
+            <h3>Admin Token</h3>
           </div>
-          <p class="hint">Nhập WEB_ADMIN_TOKEN để Agent có quyền gọi các API nội bộ.</p>
+          <p class="hint">Enter WEB_ADMIN_TOKEN to allow the Agent to call internal APIs.</p>
           <label>Admin token</label>
           <input id="token" placeholder="WEB_ADMIN_TOKEN" />
-          <button onclick="saveToken()">Lưu token</button>
+          <button onclick="saveToken()">Save token</button>
         </div>
 
         <div id="step2Card" class="card is-hidden">
           <div class="step-title">
             <span class="badge">2</span>
-            <h3>Gợi ý và duyệt chủ đề</h3>
+            <h3>Suggest & Review Topic</h3>
           </div>
-          <p class="hint">Yêu cầu Agent gợi ý một chủ đề ngắn, cụ thể và dễ triển khai thành video. Bấm Đồng ý để chốt, bấm Từ chối để lấy chủ đề khác.</p>
+          <p class="hint">Ask the Agent to suggest a topic. Approve or reject to get another.</p>
           <div class="row">
             <div>
-              <label>Loại nội dung</label>
+              <label>Content mode</label>
               <select id="mode">
-                <option value="sales">Bán sách</option>
-                <option value="story">Kể chuyện</option>
+                <option value="sales">Book Sales</option>
+                <option value="story">Storytelling</option>
               </select>
             </div>
             <div>
-              <label>Ngôn ngữ</label>
-              <input id="language" value="vi" />
+              <label>Language</label>
+              <input id="language" value="en" />
             </div>
           </div>
-          <button onclick="suggestTopic()">Gợi ý chủ đề</button>
-          <label>Chủ đề</label>
-          <textarea id="topic" rows="3" placeholder="Nhập chủ đề ở đây"></textarea>
-          <div id="topicStatus" class="status">Chưa có chủ đề để duyệt.</div>
-          <button onclick="approveTopic()">Đồng ý chủ đề này</button>
-          <button class="secondary" onclick="rejectTopic()">Từ chối, gợi ý chủ đề khác</button>
+          <button onclick="suggestTopic()">Suggest Topic</button>
+          <label>Topic</label>
+          <textarea id="topic" rows="3" placeholder="Enter topic here"></textarea>
+          <div id="topicStatus" class="status">No topic approved yet.</div>
+          <button onclick="approveTopic()">Approve this topic</button>
+          <button class="secondary" onclick="rejectTopic()">Reject, suggest another</button>
         </div>
 
         <div id="step3Card" class="card is-hidden">
           <div class="step-title">
             <span class="badge">3</span>
-            <h3>Chọn nguồn video</h3>
+            <h3>Video Source</h3>
           </div>
-          <p class="hint">Sau khi có chủ đề, chọn bạn muốn dùng video có sẵn hay để Agent tự tìm video stock trên internet.</p>
-          <label>Nguồn video</label>
+          <p class="hint">Choose whether to use your own video or let the Agent fetch stock footage.</p>
+          <label>Video source</label>
           <select id="videoSourceType" onchange="updateVideoSourceHint()">
-            <option value="self">Video có sẵn của bạn</option>
-            <option value="internet">Internet - tìm clip stock</option>
+            <option value="self">Your own video</option>
+            <option value="internet">Internet - stock clip</option>
           </select>
-          <div id="videoSourceHint" class="status">Nếu chọn video có sẵn, bước sau bạn chỉ cần dán đường dẫn file video đã có.</div>
-          <button onclick="confirmVideoSource()">Tiếp tục</button>
+          <div id="videoSourceHint" class="status">If you choose your own video, paste the file path in step 4.</div>
+          <button onclick="confirmVideoSource()">Continue</button>
         </div>
 
         <div id="step4Card" class="card is-hidden">
           <div class="step-title">
             <span class="badge">4</span>
-            <h3>Hoàn thiện job và chạy</h3>
+            <h3>Finalize & Run</h3>
           </div>
-          <p class="hint">Hoàn thiện đầu vào theo nguồn video bạn đã chọn, sau đó chạy job.</p>
+          <p class="hint">Complete the inputs based on your chosen video source, then run the job.</p>
 
           <div class="row">
             <div>
-              <label>Giọng điệu</label>
-              <input id="tone" value="thân thiện" />
+              <label>Tone</label>
+              <input id="tone" value="friendly" />
             </div>
             <div>
-              <label>Chat ID Telegram</label>
-              <input id="telegramChatId" placeholder="không bắt buộc" />
+              <label>Telegram Chat ID</label>
+              <input id="telegramChatId" placeholder="optional" />
             </div>
           </div>
 
           <div class="row">
             <div>
-              <label>Voice sample</label>
+              <label>Voice sample (optional, for XTTS cloning)</label>
               <select id="voiceSourceMode" onchange="updateVoiceSourceModeUI()">
-                <option value="library">Lấy từ thư viện audio</option>
-                <option value="upload">Tải file lên</option>
+                <option value="library">From library</option>
+                <option value="upload">Upload file</option>
               </select>
 
               <div id="voiceLibraryPanel">
                 <div class="row">
                   <div>
-                    <label>Thư viện audio</label>
+                    <label>Audio library</label>
                     <select id="voiceLibrarySelect"></select>
                   </div>
                   <div>
                     <label>&nbsp;</label>
-                    <button class="secondary" onclick="pickVoiceFromLibrary()">Dùng voice đã chọn</button>
+                    <button class="secondary" onclick="pickVoiceFromLibrary()">Use selected voice</button>
                   </div>
                 </div>
               </div>
 
               <div id="voiceUploadPanel" class="is-hidden">
-                <label>Tải file voice (.wav/.mp3/.m4a/.ogg/.flac)</label>
+                <label>Upload voice (.wav/.mp3/.m4a/.ogg/.flac)</label>
                 <input id="voiceUploadFile" type="file" accept=".wav,.mp3,.m4a,.ogg,.flac" />
-                <button class="secondary" onclick="uploadVoiceSample()">Tải voice lên server</button>
+                <button class="secondary" onclick="uploadVoiceSample()">Upload to server</button>
               </div>
 
-              <input id="voiceSampleFilename" list="voiceSamples" placeholder="voice đã chọn" />
+              <input id="voiceSampleFilename" list="voiceSamples" placeholder="selected voice" />
               <datalist id="voiceSamples"></datalist>
-              <label>Giọng Edge TTS (khi không có voice sample)</label>
+              <label>Text-to-Speech Engine</label>
+              <div class="status" style="margin-top:4px">
+                <b>TTS priority:</b> Kokoro (EN, emotional) → Edge TTS (fallback)<br/>
+                <i>If you upload a voice sample, XTTS cloning will be tried first.</i>
+              </div>
+              <label>Edge TTS Voice (fallback only)</label>
               <select id="edgeTtsVoice">
-                <option value="vi-VN-HoaiMyNeural">Nữ - HoaiMy (vi-VN-HoaiMyNeural)</option>
-                <option value="vi-VN-NamMinhNeural">Nam - NamMinh (vi-VN-NamMinhNeural)</option>
+                <option value="en-US-JennyNeural">English (US) - JennyNeural</option>
+                <option value="en-US-AriaNeural">English (US) - AriaNeural</option>
+                <option value="en-GB-SoniaNeural">English (UK) - SoniaNeural</option>
+                <option value="en-US-GuyNeural">English (US) - GuyNeural</option>
+                <option value="vi-VN-HoaiMyNeural">Vietnamese - HoaiMy</option>
               </select>
-              <div id="voiceSampleHint" class="status">Tải danh sách voice sample để video có tiếng.</div>
+              <div id="voiceSampleHint" class="status">Loading voice samples...</div>
             </div>
             <div>
-              <label>Đường dẫn video nguồn</label>
+              <label>Source video path</label>
               <input id="videoPath" placeholder="/app/data/uploads/video.mp4" />
             </div>
           </div>
 
           <div class="row">
             <div>
-              <label>Từ khóa video (internet)</label>
-              <input id="videoKeyword" placeholder="đọc sách, bàn học, thư viện..." />
+              <label>Video keyword (internet)</label>
+              <input id="videoKeyword" placeholder="reading, library, books..." />
             </div>
             <div></div>
           </div>
 
-          <div id="videoInputHint" class="status">Nếu chọn video có sẵn, hãy dán đường dẫn file video vào ô bên phải.</div>
+          <div id="videoInputHint" class="status">If using your own video, paste the file path above.</div>
 
           <div class="check-grid">
-            <label class="check-item"><input id="createAudio" type="checkbox" checked /> Tạo audio</label>
-            <label class="check-item"><input id="useGemini" type="checkbox" /> Gemini tinh chỉnh</label>
-            <label class="check-item"><input id="notifyTelegram" type="checkbox" checked /> Báo Telegram</label>
-            <label class="check-item"><input id="preserveQuality" type="checkbox" checked disabled /> Giữ chất lượng video</label>
+            <label class="check-item"><input id="createAudio" type="checkbox" checked /> Create audio</label>
+            <label class="check-item"><input id="useGemini" type="checkbox" /> Gemini refine</label>
+            <label class="check-item"><input id="notifyTelegram" type="checkbox" checked /> Notify Telegram</label>
+            <label class="check-item"><input id="preserveQuality" type="checkbox" checked disabled /> Preserve quality</label>
           </div>
 
-          <button onclick="createJob()">Chạy job</button>
-          <div id="jobResult" class="status">Chưa tạo job.</div>
+          <button onclick="createJob()">Run job</button>
+          <div id="jobResult" class="status">No job created yet.</div>
           <div id="jobResultActions" class="result-actions"></div>
         </div>
 
@@ -600,11 +608,11 @@ def web_home() -> str:
     <div id="resultsModalBackdrop" class="modal-backdrop" onclick="if (event.target === this) closeResultsModal()">
       <div class="modal">
         <div class="modal-head">
-          <h3 class="modal-title">Theo dõi kết quả job</h3>
-          <button class="modal-close" onclick="closeResultsModal()">Đóng</button>
+          <h3 class="modal-title">Job Results</h3>
+          <button class="modal-close" onclick="closeResultsModal()">Close</button>
         </div>
         <div class="modal-body">
-          <button class="secondary" onclick="loadJobs()">Làm mới danh sách job</button>
+          <button class="secondary" onclick="loadJobs()">Refresh list</button>
           <div id="jobsList" class="jobs-list"></div>
         </div>
       </div>
@@ -613,8 +621,8 @@ def web_home() -> str:
     <div id="jobModalBackdrop" class="modal-backdrop" onclick="if (event.target === this) closeJobModal()">
       <div class="modal">
         <div class="modal-head">
-          <h3 id="jobModalTitle" class="modal-title">Chi tiết job</h3>
-          <button class="modal-close" onclick="closeJobModal()">Đóng</button>
+          <h3 id="jobModalTitle" class="modal-title">Job Detail</h3>
+          <button class="modal-close" onclick="closeJobModal()">Close</button>
         </div>
         <div id="jobModalBody" class="modal-body"></div>
       </div>
@@ -630,7 +638,7 @@ def web_home() -> str:
       let activeVideoObjectUrl = '';
 
       tokenInput.value = localStorage.getItem('adminToken') || '';
-      document.getElementById('edgeTtsVoice').value = 'vi-VN-HoaiMyNeural';
+      document.getElementById('edgeTtsVoice').value = 'en-US-JennyNeural';
 
       const stepState = {
         1: Boolean(tokenInput.value.trim()),
@@ -670,11 +678,11 @@ def web_home() -> str:
         const inputHint = document.getElementById('videoInputHint');
 
         if (sourceType === 'self') {
-          sourceHint.innerText = 'Bạn đã chọn video có sẵn. Bước sau chỉ cần dán đường dẫn file video.';
-          inputHint.innerText = 'Bạn đang dùng video có sẵn. Hãy dán đường dẫn file video vào ô bên trái.';
+          sourceHint.innerText = 'You chose your own video. Paste the file path in step 4.';
+          inputHint.innerText = 'Using your own video. Paste the file path above.';
         } else {
-          sourceHint.innerText = 'Bạn đã chọn internet. Bước sau Agent sẽ dùng từ khóa để tìm clip stock.';
-          inputHint.innerText = 'Bạn đang dùng internet. Chỉ cần nhập từ khóa video ở ô bên phải.';
+          sourceHint.innerText = 'You chose internet. The Agent will use keywords to find stock clips.';
+          inputHint.innerText = 'Using internet. Just enter a video keyword above.';
         }
       }
 
@@ -687,12 +695,12 @@ def web_home() -> str:
           videoPath.disabled = false;
           videoKeyword.disabled = true;
           videoKeyword.value = '';
-          videoKeyword.placeholder = 'Không dùng khi chọn video có sẵn';
+          videoKeyword.placeholder = 'Not used when using own video';
         } else {
           videoPath.disabled = true;
           videoPath.value = '';
           videoKeyword.disabled = false;
-          videoKeyword.placeholder = 'đọc sách, bàn học, thư viện...';
+          videoKeyword.placeholder = 'reading, library, books...';
         }
       }
 
@@ -704,17 +712,17 @@ def web_home() -> str:
         const createAudioChecked = document.getElementById('createAudio').checked;
         const voiceSampleValue = document.getElementById('voiceSampleFilename').value.trim();
         if (createAudioChecked && !voiceSampleValue) {
-          updateVoiceSampleHint('Bạn chưa chọn voice sample. Hệ thống sẽ tự dùng Edge TTS để tạo giọng đọc.', false);
+          updateVoiceSampleHint('No voice sample selected. Kokoro (EN emotional TTS) or Edge TTS will be used.', false);
         }
 
         if (currentStep === 1) {
-          agentMessage.innerText = 'Bước 1: lưu token để Agent có quyền gọi API.';
+          agentMessage.innerText = 'Step 1: Save your admin token.';
         } else if (currentStep === 2) {
-          agentMessage.innerText = 'Bước 2: tạo hoặc nhập chủ đề bạn muốn làm nội dung.';
+          agentMessage.innerText = 'Step 2: Create or enter a topic for your content.';
         } else if (currentStep === 3) {
-          agentMessage.innerText = 'Bước 3: chọn bạn sẽ dùng video có sẵn hay video tìm trên internet.';
+          agentMessage.innerText = 'Step 3: Choose your video source.';
         } else if (currentStep === 4) {
-          agentMessage.innerText = 'Bước 4: hoàn thiện đầu vào và bấm Chạy job.';
+          agentMessage.innerText = 'Step 4: Finalize inputs and run the job.';
         }
 
         setStepActive(currentStep);
@@ -744,7 +752,7 @@ def web_home() -> str:
         localStorage.setItem('adminToken', value);
         stepState[1] = Boolean(value);
         updateGuide();
-        alert('Token đã được lưu');
+        alert('Token saved');
       }
 
       function setLatestJob(jobId) {
@@ -763,8 +771,8 @@ def web_home() -> str:
           return;
         }
         container.innerHTML = `
-          <button class="secondary" onclick="previewJob('${escapeHtml(jobId)}')">Xem thử video</button>
-          <button class="secondary" onclick="viewJob('${escapeHtml(jobId)}')">Xem chi tiết</button>
+          <button class="secondary" onclick="previewJob('${escapeHtml(jobId)}')">Preview video</button>
+          <button class="secondary" onclick="viewJob('${escapeHtml(jobId)}')">View details</button>
         `;
       }
 
@@ -785,18 +793,18 @@ def web_home() -> str:
       function pickVoiceFromLibrary() {
         const selected = document.getElementById('voiceLibrarySelect').value;
         if (!selected) {
-          updateVoiceSampleHint('Thư viện audio đang trống. Hãy tải file lên trước.', true);
+          updateVoiceSampleHint('Audio library is empty. Upload a file first.', true);
           return;
         }
         document.getElementById('voiceSampleFilename').value = selected;
-        updateVoiceSampleHint(`Đã chọn voice sample: ${selected}`);
+        updateVoiceSampleHint(`Voice sample selected: ${selected}`);
       }
 
       async function uploadVoiceSample() {
         const fileInput = document.getElementById('voiceUploadFile');
         const file = fileInput.files && fileInput.files[0];
         if (!file) {
-          updateVoiceSampleHint('Bạn chưa chọn file để tải lên.', true);
+          updateVoiceSampleHint('No file selected for upload.', true);
           return;
         }
 
@@ -816,9 +824,9 @@ def web_home() -> str:
           document.getElementById('voiceSampleFilename').value = data.filename;
           fileInput.value = '';
           await loadVoiceSamples();
-          updateVoiceSampleHint(`Đã tải lên: ${data.filename}`);
+          updateVoiceSampleHint(`Uploaded: ${data.filename}`);
         } catch (error) {
-          updateVoiceSampleHint('Tải file voice thất bại: ' + error.message, true);
+          updateVoiceSampleHint('Upload failed: ' + error.message, true);
         }
       }
 
@@ -835,21 +843,21 @@ def web_home() -> str:
             voiceInput.value = samples[0];
           }
           if (samples.length) {
-            updateVoiceSampleHint(`Đã tải ${samples.length} voice sample. Chọn file để video có tiếng.`);
+            updateVoiceSampleHint(`${samples.length} voice sample(s) available.`);
           } else {
-            updateVoiceSampleHint('Chưa có voice sample nào trên server. Hệ thống sẽ dùng Edge TTS mặc định.', false);
+            updateVoiceSampleHint('No voice samples. Will use Kokoro (EN) or Edge TTS.', false);
           }
         } catch (error) {
-          updateVoiceSampleHint('Không tải được danh sách voice sample: ' + error.message, true);
+          updateVoiceSampleHint('Could not load voice samples: ' + error.message, true);
         }
       }
 
       function escapeHtml(value) {
         return String(value)
-          .replaceAll('&', '&amp;')
-          .replaceAll('<', '&lt;')
-          .replaceAll('>', '&gt;')
-          .replaceAll('"', '&quot;')
+          .replaceAll('&', '&')
+          .replaceAll('<', '<')
+          .replaceAll('>', '>')
+          .replaceAll('"', '"')
           .replaceAll("'", '&#39;');
       }
 
@@ -877,41 +885,41 @@ def web_home() -> str:
       function renderJobs(items) {
         const container = document.getElementById('jobsList');
         if (!items.length) {
-          container.innerHTML = '<div class="status">Chưa có job nào.</div>';
+          container.innerHTML = '<div class="status">No jobs yet.</div>';
           return;
         }
 
         const statusLabels = {
-          queued: 'Đang chờ',
-          running: 'Đang chạy',
-          completed: 'Hoàn tất',
-          failed: 'Thất bại',
+          queued: 'Queued',
+          running: 'Running',
+          completed: 'Completed',
+          failed: 'Failed',
         };
 
         const stageLabels = {
-          generating_content: 'Đang viết nội dung',
-          generating_audio: 'Đang tạo audio',
-          preparing_video: 'Đang chuẩn bị video',
-          composing_video: 'Đang ghép video và audio',
-          publishing: 'Đang publish',
-          completed: 'Đã hoàn tất',
+          generating_content: 'Writing content',
+          generating_audio: 'Generating audio',
+          preparing_video: 'Preparing video',
+          composing_video: 'Composing video + audio',
+          publishing: 'Publishing',
+          completed: 'Completed',
         };
 
         container.innerHTML = items.map((item) => {
           const status = item.status || 'unknown';
-          const title = escapeHtml(item.topic || 'Không có chủ đề');
+          const title = escapeHtml(item.topic || 'No topic');
           const jobId = escapeHtml(item.job_id || '');
           const stageLabel = escapeHtml(stageLabels[item.current_stage] || item.stage_detail || '');
           const progressPercent = Number(item.progress_percent || 0);
           const metaLines = [
-            `Mã job: ${jobId}`,
-            `Trạng thái: ${escapeHtml(statusLabels[status] || status)}`,
-            `Loại nội dung: ${escapeHtml(item.mode || '')}`,
-            item.queue_position ? `Vị trí hàng đợi: ${escapeHtml(String(item.queue_position))}` : '',
-            item.created_at ? `Tạo lúc: ${escapeHtml(item.created_at)}` : '',
-            item.started_at ? `Bắt đầu: ${escapeHtml(item.started_at)}` : '',
-            item.completed_at ? `Hoàn tất: ${escapeHtml(item.completed_at)}` : '',
-            item.failed_at ? `Thất bại: ${escapeHtml(item.failed_at)}` : '',
+            `Job ID: ${jobId}`,
+            `Status: ${escapeHtml(statusLabels[status] || status)}`,
+            `Mode: ${escapeHtml(item.mode || '')}`,
+            item.queue_position ? `Queue position: ${escapeHtml(String(item.queue_position))}` : '',
+            item.created_at ? `Created: ${escapeHtml(item.created_at)}` : '',
+            item.started_at ? `Started: ${escapeHtml(item.started_at)}` : '',
+            item.completed_at ? `Completed: ${escapeHtml(item.completed_at)}` : '',
+            item.failed_at ? `Failed: ${escapeHtml(item.failed_at)}` : '',
           ].filter(Boolean).join('<br/>');
 
           const errorBlock = item.error ? `<div class="job-error">${escapeHtml(item.error)}</div>` : '';
@@ -919,17 +927,17 @@ def web_home() -> str:
             ? `
               <div class="mini-progress">
                 <div class="mini-progress-bar"><div class="mini-progress-fill" style="width:${Math.max(0, Math.min(progressPercent, 100))}%"></div></div>
-                <div class="mini-progress-label">${stageLabel || 'Đang xử lý'}${progressPercent ? ` • ${progressPercent}%` : ''}</div>
+                <div class="mini-progress-label">${stageLabel || 'Processing'}${progressPercent ? ` \u2022 ${progressPercent}%` : ''}</div>
               </div>
             `
             : status === 'queued' && item.queue_position
-              ? `<div class="mini-progress-label">Job đang chờ xử lý. Hiện đứng thứ ${escapeHtml(String(item.queue_position))} trong hàng đợi.</div>`
+              ? `<div class="mini-progress-label">Job waiting in queue, position #${escapeHtml(String(item.queue_position))}.</div>`
               : '';
           const retryButton = status === 'failed'
-            ? `<button class="secondary" onclick="retryJob('${jobId}')">Chạy lại job</button>`
+            ? `<button class="secondary" onclick="retryJob('${jobId}')">Retry</button>`
             : '';
-          const viewButton = `<button class="secondary" onclick="viewJob('${jobId}')">Xem thử</button>`;
-          const deleteButton = `<button class="secondary" onclick="deleteJob('${jobId}')">Xoá</button>`;
+          const viewButton = `<button class="secondary" onclick="viewJob('${jobId}')">View</button>`;
+          const deleteButton = `<button class="secondary" onclick="deleteJob('${jobId}')">Delete</button>`;
 
           return `
             <div class="job-card ${status === 'failed' ? 'failed' : ''}">
@@ -968,7 +976,7 @@ def web_home() -> str:
         const hasVideo = Boolean(job.outputs && job.outputs.video_path);
         const videoBlock = hasVideo
           ? `<video controls autoplay playsinline style="width:100%;max-height:60vh;border-radius:12px;background:#000" src="${escapeHtml(videoObjectUrl || '')}"></video>`
-          : '<div class="status">Job chưa có video để xem thử. Hãy đợi hoàn tất hoặc kiểm tra lỗi.</div>';
+          : '<div class="status">Job has no video yet. Wait for completion or check for errors.</div>';
         body.innerHTML = `
           ${videoBlock}
           <div style="margin-top:12px"><pre>${escapeHtml(JSON.stringify(job, null, 2))}</pre></div>
@@ -1003,12 +1011,12 @@ def web_home() -> str:
       }
 
       async function deleteJob(jobId) {
-        if (!confirm('Xoá job này khỏi danh sách?')) {
+        if (!confirm('Delete this job?')) {
           return;
         }
         try {
           await api(`/web/jobs/${jobId}`, { method: 'DELETE' });
-          document.getElementById('jobResult').innerText = 'Đã xoá job: ' + jobId;
+          document.getElementById('jobResult').innerText = 'Deleted job: ' + jobId;
           await loadJobs();
         } catch (error) {
           alert(error.message);
@@ -1020,7 +1028,7 @@ def web_home() -> str:
           const data = await api(`/web/jobs/${jobId}/retry`, {
             method: 'POST',
           });
-          document.getElementById('jobResult').innerText = 'Đã chạy lại job mới: ' + data.job_id;
+          document.getElementById('jobResult').innerText = 'Retry job created: ' + data.job_id;
           await loadJobs();
         } catch (error) {
           alert(error.message);
@@ -1031,7 +1039,7 @@ def web_home() -> str:
         try {
           const body = {
             mode: document.getElementById('mode').value,
-            language: document.getElementById('language').value,
+            language: document.getElementById('language').value || 'en',
           };
           const data = await api('/web/suggest-topic', {
             method: 'POST',
@@ -1040,7 +1048,7 @@ def web_home() -> str:
           });
           topicInput.value = data.topic;
           stepState[2] = false;
-          topicStatus.innerText = 'Chủ đề đã được gợi ý. Hãy đồng ý hoặc từ chối để Agent gợi ý lại.';
+          topicStatus.innerText = 'Topic suggested. Approve or reject.';
           updateGuide();
         } catch (error) {
           alert(error.message);
@@ -1050,18 +1058,18 @@ def web_home() -> str:
       function approveTopic() {
         const value = topicInput.value.trim();
         if (!value) {
-          alert('Bạn chưa có chủ đề để duyệt. Hãy bấm Gợi ý chủ đề trước.');
+          alert('No topic to approve. Click Suggest Topic first.');
           return;
         }
         stepState[2] = true;
-        topicStatus.innerText = 'Chủ đề đã được duyệt.';
+        topicStatus.innerText = 'Topic approved.';
         updateGuide();
       }
 
       async function rejectTopic() {
         const sourceTopic = topicInput.value.trim();
         if (sourceTopic) {
-          topicStatus.innerText = 'Đang gợi ý một chủ đề khác...';
+          topicStatus.innerText = 'Suggesting another topic...';
         }
         stepState[2] = false;
         await suggestTopic();
@@ -1080,8 +1088,8 @@ def web_home() -> str:
           const body = {
             mode: document.getElementById('mode').value,
             topic: topicInput.value,
-            language: document.getElementById('language').value,
-            tone: document.getElementById('tone').value,
+            language: document.getElementById('language').value || 'en',
+            tone: document.getElementById('tone').value || 'friendly',
             use_gemini_refine: document.getElementById('useGemini').checked,
             create_audio: createAudio,
             create_video: true,
@@ -1099,7 +1107,7 @@ def web_home() -> str:
             body: JSON.stringify(body),
           });
           stepState[4] = true;
-          document.getElementById('jobResult').innerText = 'Đã tạo job: ' + data.job_id;
+          document.getElementById('jobResult').innerText = 'Job created: ' + data.job_id;
           setLatestJob(data.job_id);
           updateGuide();
           await loadJobs();
@@ -1119,7 +1127,7 @@ def web_home() -> str:
 
       topicInput.addEventListener('input', (event) => {
         stepState[2] = false;
-        topicStatus.innerText = event.target.value.trim() ? 'Nhập tay xong, bấm Đồng ý nếu muốn chốt chủ đề này.' : 'Chưa có chủ đề để duyệt.';
+        topicStatus.innerText = event.target.value.trim() ? 'Manually entered. Click Approve if you want to use this topic.' : 'No topic to approve.';
         updateGuide();
       });
 
@@ -1252,7 +1260,7 @@ def retry_job(job_id: str, x_admin_token: str | None = Header(default=None)) -> 
         original_payload = {
             "mode": item.get("mode", "sales"),
             "topic": item.get("topic", ""),
-            "language": item.get("language", "vi"),
+            "language": item.get("language", "en"),
             "tone": item.get("tone", "friendly"),
             "use_gemini_refine": item.get("use_gemini_refine", False),
             "create_audio": item.get("create_audio", False),
