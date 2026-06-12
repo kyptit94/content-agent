@@ -1,3 +1,4 @@
+import asyncio
 import os
 import re
 import logging
@@ -15,17 +16,25 @@ from TTS.config.shared_configs import BaseDatasetConfig
 from TTS.tts.configs.xtts_config import XttsConfig
 from TTS.tts.models.xtts import XttsArgs, XttsAudioConfig
 
+# Kokoro TTS imports
+from kokoro import KPipeline
+from misaki import en
+import soundfile as sf
+import numpy as np
+
 app = FastAPI(title="Voice Clone Service", version="1.0.0")
 logger = logging.getLogger(__name__)
 _tts_lock = threading.Lock()
 _tts_ready = threading.Event()
 _tts_error: Exception | None = None
 _tts_engine: TTS | None = None
+_kokoro_pipeline: KPipeline | None = None
 
 os.environ.setdefault("COQUI_TOS_AGREED", "1")
 MODEL_NAME = os.getenv("COQUI_MODEL_NAME", "tts_models/multilingual/multi-dataset/xtts_v2")
 EDGE_TTS_VOICE = os.getenv("EDGE_TTS_VOICE", "vi-VN-HoaiMyNeural")
 EDGE_TTS_RATE = os.getenv("EDGE_TTS_RATE", "+0%")
+KOKORO_VOICE_EN = os.getenv("KOKORO_VOICE_EN", "af_heart")  # kokoro EN voices
 OUTPUT_DIR = Path(os.getenv("VOICE_OUTPUT_DIR", "/app/data/outputs"))
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 VOICE_SAMPLE_DIR = Path(os.getenv("VOICE_SAMPLE_DIR", "/app/data/voices"))
@@ -44,6 +53,20 @@ def _load_tts() -> TTS:
     if hasattr(torch.serialization, "add_safe_globals"):
         torch.serialization.add_safe_globals([BaseDatasetConfig, XttsConfig, XttsArgs, XttsAudioConfig])
     return TTS(model_name=MODEL_NAME, progress_bar=False, gpu=use_gpu)
+
+
+def _get_kokoro_pipeline() -> KPipeline:
+    """Lazy-load Kokoro pipeline (EN)."""
+    global _kokoro_pipeline
+    if _kokoro_pipeline is None:
+        logger.info("Initializing Kokoro EN pipeline...")
+        try:
+            # Use the Kokoro EN fallback tokenizer (misaki en)
+            _kokoro_pipeline = KPipeline(lang_code='a', model='kokoro-v0_19')
+        except Exception as exc:
+            logger.error("Failed to load Kokoro: %s", exc)
+            raise
+    return _kokoro_pipeline
 
 
 @lru_cache(maxsize=1)
@@ -221,3 +244,51 @@ def synthesize(payload: SynthesizePayload) -> dict:
             status_code=500,
             detail=f"XTTS failed and Edge TTS fallback failed: {fallback_exc}",
         ) from fallback_exc
+
+
+@app.post("/synthesize_kokoro")
+def synthesize_kokoro(payload: SynthesizePayload) -> dict:
+    """Synthesize English text using Kokoro (local, emotional TTS)."""
+    pipeline = _get_kokoro_pipeline()
+    voice = payload.speaker_wav or KOKORO_VOICE_EN
+    text = payload.text
+
+    output_path = OUTPUT_DIR / payload.output_name
+    output_path_wav = output_path.with_suffix(".wav")
+    output_path_mp3 = output_path if output_path.suffix == ".mp3" else output_path.with_suffix(".mp3")
+
+    try:
+        # Generate audio via Kokoro
+        all_audio = []
+        generator = pipeline(text, voice=voice, speed=1.0)
+        for i, (gs, ps, audio) in enumerate(generator):
+            all_audio.append(audio)
+            # Only take first for now (Kokoro splits by sentences)
+            if i > 5:
+                break
+
+        if not all_audio:
+            raise RuntimeError("Kokoro generated no audio")
+
+        # Concatenate all audio chunks
+        combined = np.concatenate(all_audio)
+
+        # Save as WAV first
+        sf.write(str(output_path_wav), combined, 24000)
+
+        # Convert to MP3 if needed via ffmpeg
+        if output_path_mp3.suffix == ".mp3":
+            import subprocess
+            subprocess.run(
+                ["ffmpeg", "-y", "-i", str(output_path_wav),
+                 "-codec:a", "libmp3lame", "-qscale:a", "2",
+                 str(output_path_mp3)],
+                check=True, capture_output=True, text=True, timeout=30,
+            )
+            output_path_wav.unlink(missing_ok=True)
+            return {"audio_path": str(output_path_mp3)}
+
+        return {"audio_path": str(output_path_wav)}
+    except Exception as exc:
+        logger.exception("Kokoro synthesis failed")
+        raise HTTPException(status_code=500, detail=f"Kokoro TTS failed: {exc}")

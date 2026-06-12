@@ -89,14 +89,25 @@ def main() -> None:
             if create_audio:
                 set_running_status(stage="generating_audio", percent=45, detail="Đang tạo audio")
                 tts_text = content[:5000]
+                is_english = language.lower().startswith("en")
+
+                # === Step 0: For English, try Kokoro (local emotional TTS) first ===
+                if is_english:
+                    try:
+                        audio_path = voice.synthesize_kokoro(
+                            text=tts_text,
+                            output_name=f"{job_id}.mp3",
+                            voice_name=None,  # use default kokoro EN voice
+                        )
+                    except Exception as kokoro_exc:
+                        audio_error = f"kokoro: {kokoro_exc}"
+                        audio_path = ""
 
                 # === STEP 1: Try XTTS (voice clone) if user has voice sample ===
-                if voice_sample:
-                    # Resolve voice sample path - convert mp3 to wav if needed
+                if not audio_path and voice_sample:
                     voice_sample_path_raw = Path(f"/app/data/voices/{voice_sample}")
                     voice_sample_wav = voice_sample_path_raw
                     if voice_sample_path_raw.suffix.lower() == ".mp3":
-                        # Convert MP3 to WAV for XTTS compatibility
                         voice_sample_wav = voice_sample_path_raw.with_suffix(".wav")
                         if not voice_sample_wav.exists():
                             try:
@@ -107,7 +118,7 @@ def main() -> None:
                                     check=True, capture_output=True, text=True, timeout=30,
                                 )
                             except Exception as conv_exc:
-                                audio_error = f"voice_convert: {conv_exc}"
+                                audio_error = f"{audio_error} | voice_convert: {conv_exc}"
 
                     if voice_sample_wav.exists():
                         try:
@@ -118,15 +129,10 @@ def main() -> None:
                                 output_name=f"{job_id}.wav",
                             )
                         except Exception as audio_exc:
-                            audio_error = f"xtts: {audio_exc}"
+                            audio_error = f"{audio_error} | xtts: {audio_exc}"
                             audio_path = ""
-                    else:
-                        audio_error = "voice_sample not found"
-                else:
-                    # No voice sample — force edge-tts
-                    pass
 
-                # === STEP 2: Try edge-tts (fallback or primary) ===
+                # === STEP 2: Try edge-tts (fallback) ===
                 if not audio_path:
                     try:
                         audio_path, srt_content = voice.synthesize_edge_with_subs(
@@ -151,8 +157,7 @@ def main() -> None:
                     except Exception:
                         pass
                     if not audio_duration_sec or audio_duration_sec <= 0:
-                        # Rough estimate: vi ~6 chars/sec
-                        speaking_rate = 5.0 if language.lower().startswith("en") else 6.0
+                        speaking_rate = 5.0 if is_english else 6.0
                         audio_duration_sec = len(content) / speaking_rate
 
             video_path = ""
