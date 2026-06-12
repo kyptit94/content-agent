@@ -892,6 +892,7 @@ def web_home() -> str:
         const statusLabels = {
           queued: 'Queued',
           running: 'Running',
+          review_pending: 'Review',
           completed: 'Completed',
           failed: 'Failed',
         };
@@ -933,11 +934,22 @@ def web_home() -> str:
             : status === 'queued' && item.queue_position
               ? `<div class="mini-progress-label">Job waiting in queue, position #${escapeHtml(String(item.queue_position))}.</div>`
               : '';
+          const approveButton = status === 'review_pending'
+            ? `<button onclick="approveJob('${jobId}')">Approve & Compose Video</button>`
+            : '';
           const retryButton = status === 'failed'
             ? `<button class="secondary" onclick="retryJob('${jobId}')">Retry</button>`
             : '';
           const viewButton = `<button class="secondary" onclick="viewJob('${jobId}')">View</button>`;
           const deleteButton = `<button class="secondary" onclick="deleteJob('${jobId}')">Delete</button>`;
+
+          // Show content + audio for review_pending jobs
+          const reviewContent = status === 'review_pending' && item.review
+            ? `<div style="margin-top:10px;max-height:200px;overflow:auto;background:#fff;border:1px solid #dde3ef;padding:8px;border-radius:8px;font-size:12px;white-space:pre-wrap">${escapeHtml(item.review.content || '')}</div>`
+            : '';
+          const reviewAudio = status === 'review_pending' && item.review && item.review.audio_path
+            ? `<div style="margin-top:6px"><audio controls preload="auto" style="width:100%" src="/web/jobs/${jobId}/audio?x=${Date.now()}"></audio></div>`
+            : '';
 
           return `
             <div class="job-card ${status === 'failed' ? 'failed' : ''}">
