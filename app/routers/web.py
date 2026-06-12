@@ -675,12 +675,6 @@ def web_home() -> str:
         const completedCount = Object.values(stepState).filter(Boolean).length;
         progressFill.style.width = ((completedCount / 4) * 100) + '%';
 
-        const createAudioChecked = document.getElementById('createAudio').checked;
-        const voiceSampleValue = document.getElementById('voiceSampleFilename').value.trim();
-        if (createAudioChecked && !voiceSampleValue) {
-          updateVoiceSampleHint('No voice sample selected. Kokoro (EN emotional TTS) or Edge TTS will be used.', false);
-        }
-
         if (currentStep === 1) {
           agentMessage.innerText = 'Step 1: Save your admin token.';
         } else if (currentStep === 2) {
@@ -740,82 +734,6 @@ def web_home() -> str:
           <button class="secondary" onclick="previewJob('${escapeHtml(jobId)}')">Preview video</button>
           <button class="secondary" onclick="viewJob('${escapeHtml(jobId)}')">View details</button>
         `;
-      }
-
-      function updateVoiceSampleHint(message, isWarning = false) {
-        const hint = document.getElementById('voiceSampleHint');
-        hint.innerText = message;
-        hint.style.background = isWarning ? '#fff1ea' : '#f2f6ff';
-        hint.style.borderColor = isWarning ? '#ffd7c2' : '#d8e2f5';
-        hint.style.color = isWarning ? '#9a3412' : '#294268';
-      }
-
-      function updateVoiceSourceModeUI() {
-        const mode = document.getElementById('voiceSourceMode').value;
-        document.getElementById('voiceLibraryPanel').classList.toggle('is-hidden', mode !== 'library');
-        document.getElementById('voiceUploadPanel').classList.toggle('is-hidden', mode !== 'upload');
-      }
-
-      function pickVoiceFromLibrary() {
-        const selected = document.getElementById('voiceLibrarySelect').value;
-        if (!selected) {
-          updateVoiceSampleHint('Audio library is empty. Upload a file first.', true);
-          return;
-        }
-        document.getElementById('voiceSampleFilename').value = selected;
-        updateVoiceSampleHint(`Voice sample selected: ${selected}`);
-      }
-
-      async function uploadVoiceSample() {
-        const fileInput = document.getElementById('voiceUploadFile');
-        const file = fileInput.files && fileInput.files[0];
-        if (!file) {
-          updateVoiceSampleHint('No file selected for upload.', true);
-          return;
-        }
-
-        const formData = new FormData();
-        formData.append('file', file);
-
-        try {
-          const response = await fetch('/web/voice-samples/upload', {
-            method: 'POST',
-            headers: { 'x-admin-token': getToken() },
-            body: formData,
-          });
-          if (!response.ok) {
-            throw new Error(await response.text());
-          }
-          const data = await response.json();
-          document.getElementById('voiceSampleFilename').value = data.filename;
-          fileInput.value = '';
-          await loadVoiceSamples();
-          updateVoiceSampleHint(`Uploaded: ${data.filename}`);
-        } catch (error) {
-          updateVoiceSampleHint('Upload failed: ' + error.message, true);
-        }
-      }
-
-      async function loadVoiceSamples() {
-        try {
-          const data = await api('/web/voice-samples');
-          const samples = data.items || [];
-          const datalist = document.getElementById('voiceSamples');
-          const voiceInput = document.getElementById('voiceSampleFilename');
-          const voiceSelect = document.getElementById('voiceLibrarySelect');
-          datalist.innerHTML = samples.map((item) => `<option value="${escapeHtml(item)}"></option>`).join('');
-          voiceSelect.innerHTML = samples.map((item) => `<option value="${escapeHtml(item)}">${escapeHtml(item)}</option>`).join('');
-          if (samples.length && !voiceInput.value.trim()) {
-            voiceInput.value = samples[0];
-          }
-          if (samples.length) {
-            updateVoiceSampleHint(`${samples.length} voice sample(s) available.`);
-          } else {
-            updateVoiceSampleHint('No voice samples. Will use Kokoro (EN) or Edge TTS.', false);
-          }
-        } catch (error) {
-          updateVoiceSampleHint('Could not load voice samples: ' + error.message, true);
-        }
       }
 
       function escapeHtml(value) {
@@ -1124,8 +1042,6 @@ def web_home() -> str:
 
       updateGuide();
       renderLatestJobAction(getLatestJob());
-      updateVoiceSourceModeUI();
-      loadVoiceSamples();
       loadJobs();
     </script>
   </body>
