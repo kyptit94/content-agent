@@ -948,7 +948,7 @@ def web_home() -> str:
             ? `<div style="margin-top:10px;max-height:200px;overflow:auto;background:#fff;border:1px solid #dde3ef;padding:8px;border-radius:8px;font-size:12px;white-space:pre-wrap">${escapeHtml(item.review.content || '')}</div>`
             : '';
           const reviewAudio = status === 'review_pending' && item.review && item.review.audio_path
-            ? `<div style="margin-top:6px"><audio controls preload="auto" style="width:100%" src="/web/jobs/${jobId}/audio?x=${Date.now()}"></audio></div>`
+            ? `<div style="margin-top:6px"><audio controls preload="auto" style="width:100%" src="/web/jobs/${jobId}/audio?token=${encodeURIComponent(getToken())}"></audio></div>`
             : '';
 
           return `
@@ -1350,8 +1350,14 @@ def approve_job(job_id: str, x_admin_token: str | None = Header(default=None)) -
 
 
 @router.get("/jobs/{job_id}/audio")
-def get_job_audio(job_id: str, x_admin_token: str | None = Header(default=None)) -> FileResponse:
-    _check_token(x_admin_token)
+def get_job_audio(
+    job_id: str,
+    token: str | None = None,
+    x_admin_token: str | None = Header(default=None),
+) -> FileResponse:
+    # Audio tag in browser cannot send headers — accept token via query param as fallback
+    actual_token = x_admin_token or token
+    _check_token(actual_token)
 
     item = queue.get_job_status(job_id)
     if not item:
