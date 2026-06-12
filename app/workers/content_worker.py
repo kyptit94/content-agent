@@ -40,7 +40,7 @@ def main() -> None:
         use_gemini_refine = payload["use_gemini_refine"]
         create_audio = payload["create_audio"]
         create_video = payload.get("create_video", False)
-        video_source_type = payload.get("video_source_type", "self")
+        video_source_type = payload.get("video_source_type", "internet")
         video_keyword = payload.get("video_keyword") or topic
         user_video_path = payload.get("user_video_path")
         notify_telegram = bool(payload.get("notify_telegram", False))
