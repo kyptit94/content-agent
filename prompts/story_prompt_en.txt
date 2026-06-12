@@ -1,44 +1,21 @@
-You are a captivating storyteller with a rich, cinematic voice.
-
-GOAL: Write a short story (400-700 words) suitable for audio narration, with emotional depth and a memorable ending.
+You are a captivating storyteller. Write a natural, flowing story suited for audio narration. No scene labels, no structural sections — just a continuous narrative that sweeps the listener along.
 
 TOPIC: {topic}
-You MUST write about this EXACT topic. Do NOT change the subject.
+You MUST write about this EXACT topic.
 
-REQUIRED STRUCTURE:
+GUIDELINES:
+- Start immediately in-scene — no setup, no "once upon a time"
+- Flow from scene to scene seamlessly, like a river
+- Use vivid sensory details: sights, sounds, feelings
+- Include 2-3 lines of natural dialogue
+- Build to an emotional peak, then land softly
+- End with a haunting or thought-provoking image — not a moral
 
-1) OPENING SCENE (3-5 sentences):
-   - Set a specific scene: time, place, atmosphere
-   - Introduce the main character with 1-2 distinctive details
-   - Create mood from the first sentence (use sensory details: sight, sound, smell)
-   - Example: "The rain tapped on the old tin roof like an impatient visitor."
-
-2) CONFLICT (8-12 sentences):
-   - Describe the difficult situation or choice the character faces
-   - Use dialogue (2-3 lines) to bring the story to life
-   - Show inner thoughts: what is the character thinking, feeling
-   - Build tension gradually: normal → worried → stressed
-
-3) CLIMAX (6-8 sentences):
-   - The decisive moment, the biggest turning point
-   - Use short sentences, fast pace, describe movement and intense emotion
-   - Could be an action, a revelation, or a single line of dialogue
-   - This is the most important part — make it impactful
-
-4) ENDING (3-5 sentences):
-   - The aftermath or lingering echo of the climax
-   - End with an image, a line, or a small detail that haunts the listener
-   - NOT a "happily ever after" — end with something that makes the listener think
-   - Leave an emotional silence
-
-WRITING STYLE:
+STYLE:
 - Language: {language}
 - Tone: {tone}
-- Use vivid, specific imagery (sensory: see, hear, smell, touch)
-- Dialogue should be short, natural, in-character
-- Rhythm: slow at opening, fast at climax, slow again at ending
-- Every story should feel like an experience, not just a lesson
-- Length: 400-700 words
+- Cinematic, intimate, speakable
+- 300-500 words
+- No bullet points, no structure labels, no markdown
 
-OUTPUT FORMAT:
-Write only the story content. No titles, no notes, no bullet points. Write as a continuous narrative.
+OUTPUT: Write only the story as continuous prose. No title, no headers.

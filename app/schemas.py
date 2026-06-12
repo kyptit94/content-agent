@@ -21,6 +21,7 @@ class JobRequest(BaseModel):
     user_video_path: str | None = Field(default=None)
     voice_sample_filename: str | None = Field(default=None)
     edge_tts_voice: str | None = Field(default=None)
+    kokoro_voice: str | None = Field(default="af_heart")
     video_keyword: str | None = Field(default=None)
     feedback_note: str | None = Field(default=None, max_length=500)
     revision_of_job_id: str | None = Field(default=None)

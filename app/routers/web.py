@@ -39,6 +39,7 @@ class CreateWebJobRequest(BaseModel):
     video_keyword: str | None = None
     voice_sample_filename: str | None = None
     edge_tts_voice: str | None = None
+    kokoro_voice: str | None = "af_heart"
     user_video_path: str | None = None
     notify_telegram: bool = True
     telegram_chat_id: str | None = None
@@ -532,52 +533,18 @@ def web_home() -> str:
 
           <div class="row">
             <div>
-              <label>Voice sample (optional, for XTTS cloning)</label>
-              <select id="voiceSourceMode" onchange="updateVoiceSourceModeUI()">
-                <option value="library">From library</option>
-                <option value="upload">Upload file</option>
+              <label>Kokoro Voice</label>
+              <select id="kokoroVoice">
+                <option value="af_heart">Female - Heart (warm)</option>
+                <option value="af_bella">Female - Bella (soft)</option>
+                <option value="af_nicole">Female - Nicole (clear)</option>
+                <option value="am_adam">Male - Adam (deep)</option>
+                <option value="am_michael">Male - Michael (calm)</option>
               </select>
-
-              <div id="voiceLibraryPanel">
-                <div class="row">
-                  <div>
-                    <label>Audio library</label>
-                    <select id="voiceLibrarySelect"></select>
-                  </div>
-                  <div>
-                    <label>&nbsp;</label>
-                    <button class="secondary" onclick="pickVoiceFromLibrary()">Use selected voice</button>
-                  </div>
-                </div>
-              </div>
-
-              <div id="voiceUploadPanel" class="is-hidden">
-                <label>Upload voice (.wav/.mp3/.m4a/.ogg/.flac)</label>
-                <input id="voiceUploadFile" type="file" accept=".wav,.mp3,.m4a,.ogg,.flac" />
-                <button class="secondary" onclick="uploadVoiceSample()">Upload to server</button>
-              </div>
-
-              <input id="voiceSampleFilename" list="voiceSamples" placeholder="selected voice" />
-              <datalist id="voiceSamples"></datalist>
-              <label>Text-to-Speech Engine</label>
-              <div class="status" style="margin-top:4px">
-                <b>TTS priority:</b> Kokoro (EN, emotional) → Edge TTS (fallback)<br/>
-                <i>If you upload a voice sample, XTTS cloning will be tried first.</i>
-              </div>
-              <label>Edge TTS Voice (fallback only)</label>
-              <select id="edgeTtsVoice">
-                <option value="en-US-JennyNeural">English (US) - JennyNeural</option>
-                <option value="en-US-AriaNeural">English (US) - AriaNeural</option>
-                <option value="en-GB-SoniaNeural">English (UK) - SoniaNeural</option>
-                <option value="en-US-GuyNeural">English (US) - GuyNeural</option>
-                <option value="vi-VN-HoaiMyNeural">Vietnamese - HoaiMy</option>
-              </select>
-              <div id="voiceSampleHint" class="status">Loading voice samples...</div>
-            </div>
-            <div>
               <label>Source video path</label>
               <input id="videoPath" placeholder="/app/data/uploads/video.mp4" />
             </div>
+            <div></div>
           </div>
 
           <div class="row">
@@ -638,7 +605,6 @@ def web_home() -> str:
       let activeVideoObjectUrl = '';
 
       tokenInput.value = localStorage.getItem('adminToken') || '';
-      document.getElementById('edgeTtsVoice').value = 'en-US-JennyNeural';
 
       const stepState = {
         1: Boolean(tokenInput.value.trim()),
@@ -1110,7 +1076,6 @@ def web_home() -> str:
       async function createJob() {
         try {
           const createAudio = document.getElementById('createAudio').checked;
-          const voiceSampleFilename = document.getElementById('voiceSampleFilename').value.trim();
 
           const body = {
             mode: document.getElementById('mode').value,
@@ -1123,8 +1088,7 @@ def web_home() -> str:
             video_source_type: document.getElementById('videoSourceType').value,
             user_video_path: document.getElementById('videoPath').value || null,
             video_keyword: document.getElementById('videoKeyword').value || null,
-            voice_sample_filename: voiceSampleFilename || null,
-            edge_tts_voice: document.getElementById('edgeTtsVoice').value || null,
+            kokoro_voice: document.getElementById('kokoroVoice').value || 'af_heart',
             notify_telegram: document.getElementById('notifyTelegram').checked,
             telegram_chat_id: document.getElementById('telegramChatId').value || null,
           };
@@ -1199,6 +1163,7 @@ def create_web_job(body: CreateWebJobRequest, x_admin_token: str | None = Header
         user_video_path=body.user_video_path,
         voice_sample_filename=body.voice_sample_filename,
         edge_tts_voice=body.edge_tts_voice,
+        kokoro_voice=body.kokoro_voice,
         notify_telegram=body.notify_telegram,
         telegram_chat_id=body.telegram_chat_id,
     )

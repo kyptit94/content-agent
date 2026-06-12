@@ -98,12 +98,14 @@ def main() -> None:
                     tts_text = content[:5000]
                     is_english = language.lower().startswith("en")
 
+                    kokoro_voice = payload.get("kokoro_voice") or "af_heart"
+
                     # Only Kokoro TTS — no fallbacks
                     try:
                         audio_path = voice.synthesize_kokoro(
                             text=tts_text,
                             output_name=f"{job_id}.mp3",
-                            voice_name=None,
+                            voice_name=kokoro_voice,
                         )
                     except Exception as kokoro_exc:
                         audio_error = f"kokoro: {kokoro_exc}"
