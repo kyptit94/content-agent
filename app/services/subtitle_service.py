@@ -1,4 +1,4 @@
-"""Generate CapCut-style ASS subtitles from SRT content or estimated timing."""
+"""Generate TikTok-style ASS subtitles with word highlighting."""
 from __future__ import annotations
 
 import re
@@ -6,7 +6,7 @@ import subprocess
 from pathlib import Path
 
 
-# CapCut-like ASS header – 1080x1920 portrait
+# TikTok-style ASS header – 1080x1920 portrait, bold yellow text with heavy outline
 _ASS_HEADER = """\
 [Script Info]
 Title: AI Agent Subtitles
@@ -14,16 +14,17 @@ ScriptType: v4.00+
 PlayResX: 1080
 PlayResY: 1920
 ScaledBorderAndShadow: yes
+WrapStyle: 2
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: CC,Arial,76,&H00FFFFFF,&H000000FF,&H00000000,&HAA000000,1,0,0,0,100,100,2,0,4,0,0,2,80,80,200,1
+Style: CC,Arial,90,&H0000FFFF,&H000000FF,&H00000000,&HAA000000,1,0,0,0,100,100,0,0,1,4,0,2,80,80,120,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 """
 
-_WORDS_PER_LINE = 5
+_WORDS_PER_LINE = 4
 
 
 def _srt_time_to_ass(srt_time: str) -> str:
@@ -94,8 +95,17 @@ def _escape_ass(text: str) -> str:
     return text.replace("\\", "\\\\").replace("{", "\\{").replace("}", "\\}")
 
 
+def _ass_color_highlight(text: str) -> str:
+    """Make first word bright yellow, rest slightly dimmer for TikTok effect."""
+    words = text.split()
+    if len(words) <= 1:
+        return text
+    result = f"{{\\c&H00E5FF&\\b1}}{words[0]}{{\\r}} " + " ".join(words[1:])
+    return result
+
+
 def srt_to_ass(srt_content: str, output_path: str) -> str:
-    """Convert SRT (word-level or phrase-level) to CapCut-style ASS file."""
+    """Convert SRT (word-level) to TikTok-style ASS with first-word highlight."""
     blocks = _parse_srt_blocks(srt_content)
     groups = _group_words(blocks, words_per_line=_WORDS_PER_LINE)
 
@@ -103,7 +113,7 @@ def srt_to_ass(srt_content: str, output_path: str) -> str:
     for g in groups:
         start = _srt_time_to_ass(g["start"])
         end = _srt_time_to_ass(g["end"])
-        text = _escape_ass(g["text"])
+        text = _ass_color_highlight(_escape_ass(g["text"]))
         lines.append(f"Dialogue: 0,{start},{end},CC,,0,0,0,,{text}")
 
     ass_content = _ASS_HEADER + "\n".join(lines) + "\n"
@@ -114,7 +124,7 @@ def srt_to_ass(srt_content: str, output_path: str) -> str:
 
 
 def estimate_ass_from_text(text: str, audio_path: str, output_path: str) -> str:
-    """Generate ASS from text + audio duration when word timing is unavailable."""
+    """Generate TikTok-style ASS from text + audio duration."""
     duration = _get_audio_duration(audio_path)
     words = text.split()
     if not words or duration <= 0:
@@ -141,8 +151,8 @@ def estimate_ass_from_text(text: str, audio_path: str, output_path: str) -> str:
     for g in groups:
         start = _srt_time_to_ass(g["start"])
         end = _srt_time_to_ass(g["end"])
-        text_escaped = _escape_ass(g["text"])
-        lines.append(f"Dialogue: 0,{start},{end},CC,,0,0,0,,{text_escaped}")
+        text = _ass_color_highlight(_escape_ass(g["text"]))
+        lines.append(f"Dialogue: 0,{start},{end},CC,,0,0,0,,{text}")
 
     ass_content = _ASS_HEADER + "\n".join(lines) + "\n"
     path = Path(output_path)

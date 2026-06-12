@@ -43,16 +43,8 @@ def main() -> None:
         video_source_type = payload.get("video_source_type", "self")
         video_keyword = payload.get("video_keyword") or topic
         user_video_path = payload.get("user_video_path")
-        voice_sample = payload.get("voice_sample_filename")
-        edge_tts_voice = payload.get("edge_tts_voice") or settings.edge_tts_voice
-        feedback_note = payload.get("feedback_note")
-        feedback_round = payload.get("feedback_round", 0)
-        revision_of_job_id = payload.get("revision_of_job_id")
         notify_telegram = bool(payload.get("notify_telegram", False))
         notify_chat_id = payload.get("telegram_chat_id") or settings.telegram_chat_id
-
-        # --- Two-phase mode ---
-        compose_only = payload.get("compose_only", False)
 
         def set_running_status(stage: str, percent: int, detail: str) -> None:
             queue.set_job_status(
@@ -62,8 +54,6 @@ def main() -> None:
                     "status": "running",
                     "mode": mode,
                     "topic": topic,
-                    "feedback_round": feedback_round,
-                    "revision_of_job_id": revision_of_job_id,
                     "started_at": datetime.utcnow().isoformat(),
                     "current_stage": stage,
                     "progress_percent": percent,
@@ -80,127 +70,37 @@ def main() -> None:
             audio_error = ""
             audio_duration_sec = None
 
-            # === PHASE 1: Generate content + audio ===
-            if not compose_only:
-                set_running_status(stage="generating_content", percent=10, detail="Đang viết nội dung")
-                content = llm.generate(
-                    mode=mode,
-                    topic=topic,
-                    tone=tone,
-                    language=language,
-                    use_gemini_refine=use_gemini_refine,
-                    feedback_note=feedback_note,
-                )
-                markdown_path = storage.save_markdown(job_id=job_id, content=content)
+            # === Step 1: Generate content ===
+            set_running_status(stage="generating_content", percent=10, detail="Writing script")
+            content = llm.generate(
+                mode=mode,
+                topic=topic,
+                tone=tone,
+                language=language,
+                use_gemini_refine=use_gemini_refine,
+                feedback_note=None,
+            )
+            markdown_path = storage.save_markdown(job_id=job_id, content=content)
 
-                if create_audio:
-                    set_running_status(stage="generating_audio", percent=45, detail="Đang tạo audio")
-                    tts_text = content[:5000]
-                    is_english = language.lower().startswith("en")
+            # === Step 2: Generate audio ===
+            if create_audio:
+                set_running_status(stage="generating_audio", percent=35, detail="Creating voiceover")
+                tts_text = content[:5000]
+                is_english = language.lower().startswith("en")
+                kokoro_voice = payload.get("kokoro_voice") or "af_heart"
 
-                    kokoro_voice = payload.get("kokoro_voice") or "af_heart"
-
-                    # Only Kokoro TTS — no fallbacks
-                    try:
-                        audio_path = voice.synthesize_kokoro(
-                            text=tts_text,
-                            output_name=f"{job_id}.mp3",
-                            voice_name=kokoro_voice,
-                        )
-                    except Exception as kokoro_exc:
-                        audio_error = f"kokoro: {kokoro_exc}"
-                        audio_path = ""
-
-                    # Get audio duration
-                    if audio_path:
-                        try:
-                            probe = subprocess.run(
-                                ["ffprobe", "-v", "error", "-show_entries", "format=duration",
-                                 "-of", "default=noprint_wrappers=1:nokey=1", audio_path],
-                                capture_output=True, text=True, timeout=15,
-                            )
-                            if probe.returncode == 0 and probe.stdout.strip():
-                                audio_duration_sec = float(probe.stdout.strip())
-                        except Exception:
-                            pass
-                        if not audio_duration_sec or audio_duration_sec <= 0:
-                            speaking_rate = 5.0 if is_english else 6.0
-                            audio_duration_sec = len(content) / speaking_rate
-
-                # --- Save review state and PAUSE here ---
-                if create_video:
-                    set_running_status(stage="review_pending", percent=50, detail="Chờ bạn duyệt nội dung và audio")
-                    queue.set_job_status(
-                        job_id=job_id,
-                        payload={
-                            "job_id": job_id,
-                            "status": "review_pending",
-                            "mode": mode,
-                            "topic": topic,
-                            "language": language,
-                            "feedback_round": feedback_round,
-                            "revision_of_job_id": revision_of_job_id,
-                            "current_stage": "review_pending",
-                            "progress_percent": 50,
-                            "stage_detail": "Nội dung và audio đã sẵn sàng. Vui lòng duyệt trước khi ghép video.",
-                            "review": {
-                                "content": content,
-                                "markdown_path": markdown_path,
-                                "audio_path": audio_path or None,
-                                "audio_error": audio_error or None,
-                            },
-                            "payload": payload,
-                        },
+                try:
+                    audio_path = voice.synthesize_kokoro(
+                        text=tts_text,
+                        output_name=f"{job_id}.mp3",
+                        voice_name=kokoro_voice,
                     )
-                    continue  # WAIT for user approval — don't compose video yet
-                else:
-                    # No video requested — mark as completed
-                    set_running_status(stage="completed", percent=100, detail="Hoàn tất")
-                    queue.set_job_status(
-                        job_id=job_id,
-                        payload={
-                            "job_id": job_id,
-                            "status": "completed",
-                            "mode": mode,
-                            "topic": topic,
-                            "feedback_round": feedback_round,
-                            "revision_of_job_id": revision_of_job_id,
-                            "completed_at": datetime.utcnow().isoformat(),
-                            "current_stage": "completed",
-                            "progress_percent": 100,
-                            "stage_detail": "Đã hoàn tất",
-                            "outputs": {
-                                "markdown_path": markdown_path,
-                                "audio_path": audio_path or None,
-                                "audio_error": audio_error or None,
-                            },
-                            "payload": payload,
-                        },
-                    )
+                except Exception as kokoro_exc:
+                    audio_error = f"kokoro: {kokoro_exc}"
+                    audio_path = ""
 
-                if notify_telegram and notify_chat_id and telegram.enabled:
-                    telegram.send_to_chat(
-                        chat_id=notify_chat_id,
-                        text=f"[{job_id}] Completed\nTopic: {topic}\nAudio: {audio_path or 'n/a'}",
-                    )
-
-            # === PHASE 2: Compose video (called after user approves) ===
-            if compose_only:
-                # Load saved review data from Redis
-                saved = queue.get_job_status(job_id)
-                if saved and saved.get("review"):
-                    review = saved["review"]
-                    content = review.get("content", "")
-                    markdown_path = review.get("markdown_path", "")
-                    audio_path = review.get("audio_path", "")
-                    audio_error = review.get("audio_error", "")
-                elif saved and saved.get("outputs"):
-                    outputs = saved["outputs"]
-                    audio_path = outputs.get("audio_path", "")
-                    audio_error = outputs.get("audio_error", "")
-
-                # Re-compute audio duration
-                if audio_path and Path(audio_path).exists():
+                # Get audio duration
+                if audio_path:
                     try:
                         probe = subprocess.run(
                             ["ffprobe", "-v", "error", "-show_entries", "format=duration",
@@ -211,12 +111,15 @@ def main() -> None:
                             audio_duration_sec = float(probe.stdout.strip())
                     except Exception:
                         pass
+                    if not audio_duration_sec or audio_duration_sec <= 0:
+                        speaking_rate = 5.0 if is_english else 6.0
+                        audio_duration_sec = len(content) / speaking_rate
 
-            # === Compose video ===
+            # === Step 3: Auto-compose video immediately (no review step) ===
             video_path = ""
             video_source = ""
-            if create_video and compose_only:
-                set_running_status(stage="preparing_video", percent=65, detail="Đang chuẩn bị video")
+            if create_video:
+                set_running_status(stage="preparing_video", percent=55, detail="Preparing video source")
                 source_path = ""
                 if video_source_type == "internet":
                     clip_path, clip_source = stock_video.fetch(
@@ -239,90 +142,64 @@ def main() -> None:
                 if settings.video_burn_subtitles and audio_path:
                     ass_out = str(Path("/app/data/outputs") / f"{job_id}.ass")
                     try:
-                        if srt_content:
-                            subtitle_path = srt_to_ass(srt_content, ass_out)
-                        else:
-                            subtitle_path = estimate_ass_from_text(
-                                text=content[:5000] if content else "",
-                                audio_path=audio_path,
-                                output_path=ass_out,
-                            ) or None
+                        subtitle_path = estimate_ass_from_text(
+                            text=content[:5000] if content else "",
+                            audio_path=audio_path,
+                            output_path=ass_out,
+                        ) or None
                     except Exception:
                         subtitle_path = None
 
-                if (
-                    source_path == user_video_path
-                    and settings.video_preserve_quality
-                    and not audio_path
-                    and not settings.video_text_overlay
-                    and not subtitle_path
-                ):
-                    video_path = source_path
-                else:
-                    set_running_status(stage="composing_video", percent=82, detail="Đang ghép video và audio")
-                    video_path = composer.compose(
-                        job_id=job_id,
-                        source_video_path=source_path,
-                        audio_path=audio_path or None,
-                        title=topic,
-                        preserve_quality=settings.video_preserve_quality,
-                        overlay_text=settings.video_text_overlay,
-                        subtitle_path=subtitle_path,
-                        audio_duration_sec=audio_duration_sec,
-                    )
-
-            # === Final: Mark completed ===
-            if compose_only:
-                set_running_status(stage="completed", percent=100, detail="Đã hoàn tất")
-                queue.set_job_status(
+                set_running_status(stage="composing_video", percent=75, detail="Rendering final video")
+                video_path = composer.compose(
                     job_id=job_id,
-                    payload={
-                        "job_id": job_id,
-                        "status": "completed",
-                        "mode": mode,
-                        "topic": topic,
-                        "feedback_round": feedback_round,
-                        "revision_of_job_id": revision_of_job_id,
-                        "completed_at": datetime.utcnow().isoformat(),
-                        "current_stage": "completed",
-                        "progress_percent": 100,
-                        "stage_detail": "Đã hoàn tất",
-                        "outputs": {
-                            "markdown_path": markdown_path,
-                            "audio_path": audio_path or None,
-                            "audio_error": audio_error or None,
-                            "video_path": video_path or None,
-                            "video_source": video_source or None,
-                        },
-                        "payload": payload,
-                    },
+                    source_video_path=source_path,
+                    audio_path=audio_path or None,
+                    title=topic,
+                    preserve_quality=settings.video_preserve_quality,
+                    overlay_text=settings.video_text_overlay,
+                    subtitle_path=subtitle_path,
+                    audio_duration_sec=audio_duration_sec,
                 )
 
-                if notify_telegram and notify_chat_id and telegram.enabled:
-                    telegram_error = None
-                    if video_path:
-                        try:
-                            telegram.send_file_to_chat(
-                                chat_id=notify_chat_id,
-                                file_path=video_path,
-                                caption=f"[{job_id}] Video hoàn tất\nTopic: {topic}",
-                            )
-                        except Exception as exc:
-                            telegram_error = exc
-                    telegram.send_to_chat(
-                        chat_id=notify_chat_id,
-                        text=(
-                            f"[{job_id}] Completed\n"
-                            f"Topic: {topic}\n"
-                            f"Video: {video_path or 'n/a'}\n"
-                            f"Audio: {audio_path or 'n/a'}"
-                        ),
-                    )
-                    if telegram_error:
-                        telegram.send_to_chat(
+            # === Final: Mark completed ===
+            set_running_status(stage="completed", percent=100, detail="Done")
+            queue.set_job_status(
+                job_id=job_id,
+                payload={
+                    "job_id": job_id,
+                    "status": "completed",
+                    "mode": mode,
+                    "topic": topic,
+                    "completed_at": datetime.utcnow().isoformat(),
+                    "current_stage": "completed",
+                    "progress_percent": 100,
+                    "stage_detail": "Done",
+                    "outputs": {
+                        "markdown_path": markdown_path,
+                        "audio_path": audio_path or None,
+                        "audio_error": audio_error or None,
+                        "video_path": video_path or None,
+                        "video_source": video_source or None,
+                    },
+                    "payload": payload,
+                },
+            )
+
+            if notify_telegram and notify_chat_id and telegram.enabled:
+                if video_path:
+                    try:
+                        telegram.send_file_to_chat(
                             chat_id=notify_chat_id,
-                            text=f"[{job_id}] Video xong nhưng không gửi được file: {telegram_error}",
+                            file_path=video_path,
+                            caption=f"[{job_id}] {topic}",
                         )
+                    except Exception:
+                        pass
+                telegram.send_to_chat(
+                    chat_id=notify_chat_id,
+                    text=f"[{job_id}] Done\nTopic: {topic}",
+                )
 
         except Exception as exc:
             queue.set_job_status(
