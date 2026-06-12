@@ -962,7 +962,10 @@ def web_home() -> str:
               </div>
               ${progressBlock}
               ${errorBlock}
+              ${reviewContent}
+              ${reviewAudio}
               <div class="job-actions">
+                ${approveButton}
                 ${viewButton}
                 ${deleteButton}
                 ${retryButton}
