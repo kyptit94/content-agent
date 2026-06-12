@@ -51,6 +51,9 @@ def main() -> None:
         notify_telegram = bool(payload.get("notify_telegram", False))
         notify_chat_id = payload.get("telegram_chat_id") or settings.telegram_chat_id
 
+        # --- Two-phase mode ---
+        compose_only = payload.get("compose_only", False)
+
         def set_running_status(stage: str, percent: int, detail: str) -> None:
             queue.set_job_status(
                 job_id=job_id,
@@ -69,83 +72,175 @@ def main() -> None:
                 },
             )
 
-        set_running_status(stage="generating_content", percent=10, detail="Đang viết nội dung")
-
         try:
-            content = llm.generate(
-                mode=mode,
-                topic=topic,
-                tone=tone,
-                language=language,
-                use_gemini_refine=use_gemini_refine,
-                feedback_note=feedback_note,
-            )
-            markdown_path = storage.save_markdown(job_id=job_id, content=content)
-
+            content = ""
+            markdown_path = ""
             audio_path = ""
             srt_content = ""
             audio_error = ""
             audio_duration_sec = None
-            if create_audio:
-                set_running_status(stage="generating_audio", percent=45, detail="Đang tạo audio")
-                tts_text = content[:5000]
-                is_english = language.lower().startswith("en")
 
-                # === Step 0: For English, try Kokoro (local emotional TTS) first ===
-                if is_english:
-                    try:
-                        audio_path = voice.synthesize_kokoro(
-                            text=tts_text,
-                            output_name=f"{job_id}.mp3",
-                            voice_name=None,  # use default kokoro EN voice
-                        )
-                    except Exception as kokoro_exc:
-                        audio_error = f"kokoro: {kokoro_exc}"
-                        audio_path = ""
+            # === PHASE 1: Generate content + audio ===
+            if not compose_only:
+                set_running_status(stage="generating_content", percent=10, detail="Đang viết nội dung")
+                content = llm.generate(
+                    mode=mode,
+                    topic=topic,
+                    tone=tone,
+                    language=language,
+                    use_gemini_refine=use_gemini_refine,
+                    feedback_note=feedback_note,
+                )
+                markdown_path = storage.save_markdown(job_id=job_id, content=content)
 
-                # === STEP 1: Try XTTS (voice clone) if user has voice sample ===
-                if not audio_path and voice_sample:
-                    voice_sample_path_raw = Path(f"/app/data/voices/{voice_sample}")
-                    voice_sample_wav = voice_sample_path_raw
-                    if voice_sample_path_raw.suffix.lower() == ".mp3":
-                        voice_sample_wav = voice_sample_path_raw.with_suffix(".wav")
-                        if not voice_sample_wav.exists():
-                            try:
-                                subprocess.run(
-                                    ["ffmpeg", "-y", "-i", str(voice_sample_path_raw),
-                                     "-acodec", "pcm_s16le", "-ar", "22050",
-                                     str(voice_sample_wav)],
-                                    check=True, capture_output=True, text=True, timeout=30,
-                                )
-                            except Exception as conv_exc:
-                                audio_error = f"{audio_error} | voice_convert: {conv_exc}"
+                if create_audio:
+                    set_running_status(stage="generating_audio", percent=45, detail="Đang tạo audio")
+                    tts_text = content[:5000]
+                    is_english = language.lower().startswith("en")
 
-                    if voice_sample_wav.exists():
+                    # Step 0: For English, try Kokoro (local emotional TTS) first
+                    if is_english:
                         try:
-                            audio_path = voice.synthesize(
+                            audio_path = voice.synthesize_kokoro(
                                 text=tts_text,
-                                language=language,
-                                speaker_wav=str(voice_sample_wav),
-                                output_name=f"{job_id}.wav",
+                                output_name=f"{job_id}.mp3",
+                                voice_name=None,
                             )
-                        except Exception as audio_exc:
-                            audio_error = f"{audio_error} | xtts: {audio_exc}"
+                        except Exception as kokoro_exc:
+                            audio_error = f"kokoro: {kokoro_exc}"
                             audio_path = ""
 
-                # === STEP 2: Try edge-tts (fallback) ===
-                if not audio_path:
-                    try:
-                        audio_path, srt_content = voice.synthesize_edge_with_subs(
-                            text=tts_text,
-                            output_name=f"{job_id}.mp3",
-                            voice_name=edge_tts_voice,
-                        )
-                    except Exception as audio_exc:
-                        audio_error = f"{audio_error} | edge_tts: {audio_exc}" if audio_error else str(audio_exc)
-                        audio_path = ""
+                    # Step 1: Try XTTS (voice clone) if user has voice sample
+                    if not audio_path and voice_sample:
+                        voice_sample_path_raw = Path(f"/app/data/voices/{voice_sample}")
+                        voice_sample_wav = voice_sample_path_raw
+                        if voice_sample_path_raw.suffix.lower() == ".mp3":
+                            voice_sample_wav = voice_sample_path_raw.with_suffix(".wav")
+                            if not voice_sample_wav.exists():
+                                try:
+                                    subprocess.run(
+                                        ["ffmpeg", "-y", "-i", str(voice_sample_path_raw),
+                                         "-acodec", "pcm_s16le", "-ar", "22050",
+                                         str(voice_sample_wav)],
+                                        check=True, capture_output=True, text=True, timeout=30,
+                                    )
+                                except Exception as conv_exc:
+                                    audio_error = f"{audio_error} | voice_convert: {conv_exc}"
 
-                # === STEP 3: Get audio duration ===
-                if audio_path:
+                        if voice_sample_wav.exists():
+                            try:
+                                audio_path = voice.synthesize(
+                                    text=tts_text,
+                                    language=language,
+                                    speaker_wav=str(voice_sample_wav),
+                                    output_name=f"{job_id}.wav",
+                                )
+                            except Exception as audio_exc:
+                                audio_error = f"{audio_error} | xtts: {audio_exc}"
+                                audio_path = ""
+
+                    # Step 2: Try edge-tts (fallback)
+                    if not audio_path:
+                        try:
+                            audio_path, srt_content = voice.synthesize_edge_with_subs(
+                                text=tts_text,
+                                output_name=f"{job_id}.mp3",
+                                voice_name=edge_tts_voice,
+                            )
+                        except Exception as audio_exc:
+                            audio_error = f"{audio_error} | edge_tts: {audio_exc}" if audio_error else str(audio_exc)
+                            audio_path = ""
+
+                    # Get audio duration
+                    if audio_path:
+                        try:
+                            probe = subprocess.run(
+                                ["ffprobe", "-v", "error", "-show_entries", "format=duration",
+                                 "-of", "default=noprint_wrappers=1:nokey=1", audio_path],
+                                capture_output=True, text=True, timeout=15,
+                            )
+                            if probe.returncode == 0 and probe.stdout.strip():
+                                audio_duration_sec = float(probe.stdout.strip())
+                        except Exception:
+                            pass
+                        if not audio_duration_sec or audio_duration_sec <= 0:
+                            speaking_rate = 5.0 if is_english else 6.0
+                            audio_duration_sec = len(content) / speaking_rate
+
+                # --- Save review state and PAUSE here ---
+                if create_video:
+                    set_running_status(stage="review_pending", percent=50, detail="Chờ bạn duyệt nội dung và audio")
+                    queue.set_job_status(
+                        job_id=job_id,
+                        payload={
+                            "job_id": job_id,
+                            "status": "review_pending",
+                            "mode": mode,
+                            "topic": topic,
+                            "language": language,
+                            "feedback_round": feedback_round,
+                            "revision_of_job_id": revision_of_job_id,
+                            "current_stage": "review_pending",
+                            "progress_percent": 50,
+                            "stage_detail": "Nội dung và audio đã sẵn sàng. Vui lòng duyệt trước khi ghép video.",
+                            "review": {
+                                "content": content,
+                                "markdown_path": markdown_path,
+                                "audio_path": audio_path or None,
+                                "audio_error": audio_error or None,
+                            },
+                            "payload": payload,
+                        },
+                    )
+                    continue  # WAIT for user approval — don't compose video yet
+                else:
+                    # No video requested — mark as completed
+                    set_running_status(stage="completed", percent=100, detail="Hoàn tất")
+                    queue.set_job_status(
+                        job_id=job_id,
+                        payload={
+                            "job_id": job_id,
+                            "status": "completed",
+                            "mode": mode,
+                            "topic": topic,
+                            "feedback_round": feedback_round,
+                            "revision_of_job_id": revision_of_job_id,
+                            "completed_at": datetime.utcnow().isoformat(),
+                            "current_stage": "completed",
+                            "progress_percent": 100,
+                            "stage_detail": "Đã hoàn tất",
+                            "outputs": {
+                                "markdown_path": markdown_path,
+                                "audio_path": audio_path or None,
+                                "audio_error": audio_error or None,
+                            },
+                            "payload": payload,
+                        },
+                    )
+
+                if notify_telegram and notify_chat_id and telegram.enabled:
+                    telegram.send_to_chat(
+                        chat_id=notify_chat_id,
+                        text=f"[{job_id}] Completed\nTopic: {topic}\nAudio: {audio_path or 'n/a'}",
+                    )
+
+            # === PHASE 2: Compose video (called after user approves) ===
+            if compose_only:
+                # Load saved review data from Redis
+                saved = queue.get_job_status(job_id)
+                if saved and saved.get("review"):
+                    review = saved["review"]
+                    content = review.get("content", "")
+                    markdown_path = review.get("markdown_path", "")
+                    audio_path = review.get("audio_path", "")
+                    audio_error = review.get("audio_error", "")
+                elif saved and saved.get("outputs"):
+                    outputs = saved["outputs"]
+                    audio_path = outputs.get("audio_path", "")
+                    audio_error = outputs.get("audio_error", "")
+
+                # Re-compute audio duration
+                if audio_path and Path(audio_path).exists():
                     try:
                         probe = subprocess.run(
                             ["ffprobe", "-v", "error", "-show_entries", "format=duration",
@@ -156,13 +251,11 @@ def main() -> None:
                             audio_duration_sec = float(probe.stdout.strip())
                     except Exception:
                         pass
-                    if not audio_duration_sec or audio_duration_sec <= 0:
-                        speaking_rate = 5.0 if is_english else 6.0
-                        audio_duration_sec = len(content) / speaking_rate
 
+            # === Compose video ===
             video_path = ""
             video_source = ""
-            if create_video:
+            if create_video and compose_only:
                 set_running_status(stage="preparing_video", percent=65, detail="Đang chuẩn bị video")
                 source_path = ""
                 if video_source_type == "internet":
@@ -190,7 +283,7 @@ def main() -> None:
                             subtitle_path = srt_to_ass(srt_content, ass_out)
                         else:
                             subtitle_path = estimate_ass_from_text(
-                                text=content[:5000],
+                                text=content[:5000] if content else "",
                                 audio_path=audio_path,
                                 output_path=ass_out,
                             ) or None
@@ -218,71 +311,59 @@ def main() -> None:
                         audio_duration_sec=audio_duration_sec,
                     )
 
-            publish_results: list[str] = []
-            if video_path and settings.auto_publish_enabled:
-                set_running_status(stage="publishing", percent=92, detail="Đang đẩy video đi publish")
-                publish_description = (
-                    f"{topic}\n\n"
-                    f"{content[:800]}\n\n"
-                    f"#shorts #book #story"
-                )
-                publish_results = social.publish_video(
+            # === Final: Mark completed ===
+            if compose_only:
+                set_running_status(stage="completed", percent=100, detail="Đã hoàn tất")
+                queue.set_job_status(
                     job_id=job_id,
-                    title=topic,
-                    description=publish_description,
-                    video_path=video_path,
-                )
-
-            queue.set_job_status(
-                job_id=job_id,
-                payload={
-                    "job_id": job_id,
-                    "status": "completed",
-                    "mode": mode,
-                    "topic": topic,
-                    "feedback_round": feedback_round,
-                    "revision_of_job_id": revision_of_job_id,
-                    "completed_at": datetime.utcnow().isoformat(),
-                    "current_stage": "completed",
-                    "progress_percent": 100,
-                    "stage_detail": "Đã hoàn tất",
-                    "outputs": {
-                        "markdown_path": markdown_path,
-                        "audio_path": audio_path or None,
-                        "audio_error": audio_error or None,
-                        "video_path": video_path or None,
-                        "video_source": video_source or None,
+                    payload={
+                        "job_id": job_id,
+                        "status": "completed",
+                        "mode": mode,
+                        "topic": topic,
+                        "feedback_round": feedback_round,
+                        "revision_of_job_id": revision_of_job_id,
+                        "completed_at": datetime.utcnow().isoformat(),
+                        "current_stage": "completed",
+                        "progress_percent": 100,
+                        "stage_detail": "Đã hoàn tất",
+                        "outputs": {
+                            "markdown_path": markdown_path,
+                            "audio_path": audio_path or None,
+                            "audio_error": audio_error or None,
+                            "video_path": video_path or None,
+                            "video_source": video_source or None,
+                        },
+                        "payload": payload,
                     },
-                    "auto_publish": publish_results,
-                    "payload": payload,
-                },
-            )
-
-            if notify_telegram and notify_chat_id and telegram.enabled:
-                telegram_error = None
-                if video_path:
-                    try:
-                        telegram.send_file_to_chat(
-                            chat_id=notify_chat_id,
-                            file_path=video_path,
-                            caption=f"[{job_id}] Video hoàn tất\nTopic: {topic}",
-                        )
-                    except Exception as exc:
-                        telegram_error = exc
-                telegram.send_to_chat(
-                    chat_id=notify_chat_id,
-                    text=(
-                        f"[{job_id}] Completed\n"
-                        f"Topic: {topic}\n"
-                        f"Video: {video_path or 'n/a'}\n"
-                        f"Audio: {audio_path or 'n/a'}"
-                    ),
                 )
-                if telegram_error:
+
+                if notify_telegram and notify_chat_id and telegram.enabled:
+                    telegram_error = None
+                    if video_path:
+                        try:
+                            telegram.send_file_to_chat(
+                                chat_id=notify_chat_id,
+                                file_path=video_path,
+                                caption=f"[{job_id}] Video hoàn tất\nTopic: {topic}",
+                            )
+                        except Exception as exc:
+                            telegram_error = exc
                     telegram.send_to_chat(
                         chat_id=notify_chat_id,
-                        text=f"[{job_id}] Video xong nhưng không gửi được file: {telegram_error}",
+                        text=(
+                            f"[{job_id}] Completed\n"
+                            f"Topic: {topic}\n"
+                            f"Video: {video_path or 'n/a'}\n"
+                            f"Audio: {audio_path or 'n/a'}"
+                        ),
                     )
+                    if telegram_error:
+                        telegram.send_to_chat(
+                            chat_id=notify_chat_id,
+                            text=f"[{job_id}] Video xong nhưng không gửi được file: {telegram_error}",
+                        )
+
         except Exception as exc:
             queue.set_job_status(
                 job_id=job_id,

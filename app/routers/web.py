@@ -1314,6 +1314,51 @@ def get_job_video(job_id: str, x_admin_token: str | None = Header(default=None))
     return FileResponse(path, media_type="video/mp4", filename=path.name)
 
 
+@router.post("/jobs/{job_id}/approve")
+def approve_job(job_id: str, x_admin_token: str | None = Header(default=None)) -> dict:
+    _check_token(x_admin_token)
+
+    item = queue.get_job_status(job_id)
+    if not item:
+        raise HTTPException(status_code=404, detail="job not found")
+
+    if item.get("status") != "review_pending":
+        raise HTTPException(status_code=400, detail="job is not in review_pending state")
+
+    original_payload = item.get("payload") or {}
+    compose_payload = dict(original_payload) if isinstance(original_payload, dict) else {}
+    compose_payload["compose_only"] = True
+    compose_payload["job_id"] = job_id
+
+    queue.enqueue(compose_payload)
+    return {"job_id": job_id, "status": "composing"}
+
+
+@router.get("/jobs/{job_id}/audio")
+def get_job_audio(job_id: str, x_admin_token: str | None = Header(default=None)) -> FileResponse:
+    _check_token(x_admin_token)
+
+    item = queue.get_job_status(job_id)
+    if not item:
+        raise HTTPException(status_code=404, detail="job not found")
+
+    audio_path = None
+    if item.get("review") and item["review"].get("audio_path"):
+        audio_path = item["review"]["audio_path"]
+    elif item.get("outputs") and item["outputs"].get("audio_path"):
+        audio_path = item["outputs"]["audio_path"]
+
+    if not audio_path:
+        raise HTTPException(status_code=404, detail="audio not found")
+
+    path = Path(audio_path)
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="audio file missing")
+
+    media_type = "audio/mpeg" if path.suffix == ".mp3" else "audio/wav"
+    return FileResponse(path, media_type=media_type, filename=path.name)
+
+
 @router.get("/jobs/{job_id}")
 def get_job(job_id: str, x_admin_token: str | None = Header(default=None)) -> dict:
     _check_token(x_admin_token)
