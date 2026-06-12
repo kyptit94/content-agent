@@ -18,11 +18,18 @@ class LLMService:
         self.redis = Redis.from_url(settings.redis_url, decode_responses=True)
 
     @staticmethod
-    def _load_prompt(mode: str) -> str:
-        filename = f"{mode}_prompt_vi.txt"
+    def _load_prompt(mode: str, language: str = "en") -> str:
+        # Map language to prompt file suffix
+        lang_suffix = "en" if language.lower().startswith("en") else "vi"
+        filename = f"{mode}_prompt_{lang_suffix}.txt"
         filepath = _PROMPT_DIR / filename
         if filepath.exists():
             return filepath.read_text(encoding="utf-8").strip()
+        # Fallback: try VI if EN not found
+        if lang_suffix == "en":
+            fallback = _PROMPT_DIR / f"{mode}_prompt_vi.txt"
+            if fallback.exists():
+                return fallback.read_text(encoding="utf-8").strip()
         return ""
 
     @staticmethod
@@ -211,7 +218,7 @@ class LLMService:
             )
 
         # --- Build prompt from file ---
-        base_prompt = self._load_prompt(mode=mode)
+        base_prompt = self._load_prompt(mode=mode, language=language)
         if base_prompt:
             local_prompt = (
                 base_prompt
