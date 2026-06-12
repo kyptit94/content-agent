@@ -200,11 +200,11 @@ class VoiceService:
         raise RuntimeError(f"edge_tts failed all voices: {last_error}")
 
     def synthesize_edge_with_subs(
-        self, text: str, output_name: str, voice_name: str | None = None
+        self, text: str, output_name: str, voice_name: str | None = None, language: str = "vi"
     ) -> tuple[str, str]:
         """Returns (audio_path, srt_content). Falls back to gTTS if edge_tts fails."""
         # Preprocess text for natural voice
-        text = self._preprocess_for_tts(text)
+        text = self._preprocess_for_tts(text, language)
 
         output_path = self.output_dir / output_name
         attempt_log: list[str] = []
@@ -221,7 +221,14 @@ class VoiceService:
                     srt_content = self._edge_save_with_timing(
                         text=text, voice=voice, output_path=output_path
                     )
-                    return str(output_path), srt_content
+                    # Validate audio is not empty/silent before returning
+                    if self._validate_audio_file(str(output_path)):
+                        return str(output_path), srt_content
+                    else:
+                        reason = "edge_tts produced empty audio (0s or silent)"
+                        attempt_log.append(f"edge/{voice}: {reason}")
+                        # Remove empty file so it doesn't appear valid later
+                        output_path.unlink(missing_ok=True)
                 except Exception as exc:
                     err_str = str(exc)
                     if "403" in err_str:
@@ -247,9 +254,14 @@ class VoiceService:
         # --- Fallback: gTTS ---
         gtts_path = output_path.with_suffix(".mp3")
         try:
-            audio_path_gtts = self._gtts_save(text=text, output_path=gtts_path)
-            attempt_log.append("gtts: ok")
-            return audio_path_gtts, ""   # gTTS has no word timing
+            gtts_lang = "en" if language.lower().startswith("en") else "vi"
+            audio_path_gtts = self._gtts_save(text=text, output_path=gtts_path, language=gtts_lang)
+            # Validate gTTS output too
+            if self._validate_audio_file(audio_path_gtts):
+                attempt_log.append("gtts: ok")
+                return audio_path_gtts, ""   # gTTS has no word timing
+            else:
+                attempt_log.append("gtts: produced empty audio")
         except Exception as exc:
             attempt_log.append(f"gtts: {str(exc)[:120]}")
 
@@ -257,13 +269,35 @@ class VoiceService:
         raise RuntimeError(f"All TTS engines failed: {detail}")
 
     @staticmethod
-    def _gtts_save(text: str, output_path: Path) -> str:
+    def _gtts_save(text: str, output_path: Path, language: str = "vi") -> str:
         from gtts import gTTS  # type: ignore
 
-        lang = "vi"
+        lang = language if language in ("vi", "en") else "vi"
         tts = gTTS(text=text, lang=lang, slow=False)
         tts.save(str(output_path))
         return str(output_path)
+
+    @staticmethod
+    def _validate_audio_file(audio_path: str, min_duration_sec: float = 0.1) -> bool:
+        """Check that an audio file exists, has non-zero size, and contains valid audio."""
+        import subprocess
+        path = Path(audio_path)
+        if not path.exists():
+            return False
+        if path.stat().st_size == 0:
+            return False
+        try:
+            probe = subprocess.run(
+                ["ffprobe", "-v", "error", "-show_entries", "format=duration",
+                 "-of", "default=noprint_wrappers=1:nokey=1", audio_path],
+                capture_output=True, text=True, timeout=15,
+            )
+            if probe.returncode == 0 and probe.stdout.strip():
+                duration = float(probe.stdout.strip())
+                return duration >= min_duration_sec
+        except Exception:
+            pass
+        return False
 
     @staticmethod
     def _edge_save(text: str, voice: str, output_path: Path) -> None:

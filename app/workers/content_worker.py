@@ -98,58 +98,16 @@ def main() -> None:
                     tts_text = content[:5000]
                     is_english = language.lower().startswith("en")
 
-                    # Step 0: For English, try Kokoro (local emotional TTS) first
-                    if is_english:
-                        try:
-                            audio_path = voice.synthesize_kokoro(
-                                text=tts_text,
-                                output_name=f"{job_id}.mp3",
-                                voice_name=None,
-                            )
-                        except Exception as kokoro_exc:
-                            audio_error = f"kokoro: {kokoro_exc}"
-                            audio_path = ""
-
-                    # Step 1: Try XTTS (voice clone) if user has voice sample
-                    if not audio_path and voice_sample:
-                        voice_sample_path_raw = Path(f"/app/data/voices/{voice_sample}")
-                        voice_sample_wav = voice_sample_path_raw
-                        if voice_sample_path_raw.suffix.lower() == ".mp3":
-                            voice_sample_wav = voice_sample_path_raw.with_suffix(".wav")
-                            if not voice_sample_wav.exists():
-                                try:
-                                    subprocess.run(
-                                        ["ffmpeg", "-y", "-i", str(voice_sample_path_raw),
-                                         "-acodec", "pcm_s16le", "-ar", "22050",
-                                         str(voice_sample_wav)],
-                                        check=True, capture_output=True, text=True, timeout=30,
-                                    )
-                                except Exception as conv_exc:
-                                    audio_error = f"{audio_error} | voice_convert: {conv_exc}"
-
-                        if voice_sample_wav.exists():
-                            try:
-                                audio_path = voice.synthesize(
-                                    text=tts_text,
-                                    language=language,
-                                    speaker_wav=str(voice_sample_wav),
-                                    output_name=f"{job_id}.wav",
-                                )
-                            except Exception as audio_exc:
-                                audio_error = f"{audio_error} | xtts: {audio_exc}"
-                                audio_path = ""
-
-                    # Step 2: Try edge-tts (fallback)
-                    if not audio_path:
-                        try:
-                            audio_path, srt_content = voice.synthesize_edge_with_subs(
-                                text=tts_text,
-                                output_name=f"{job_id}.mp3",
-                                voice_name=edge_tts_voice,
-                            )
-                        except Exception as audio_exc:
-                            audio_error = f"{audio_error} | edge_tts: {audio_exc}" if audio_error else str(audio_exc)
-                            audio_path = ""
+                    # Only Kokoro TTS — no fallbacks
+                    try:
+                        audio_path = voice.synthesize_kokoro(
+                            text=tts_text,
+                            output_name=f"{job_id}.mp3",
+                            voice_name=None,
+                        )
+                    except Exception as kokoro_exc:
+                        audio_error = f"kokoro: {kokoro_exc}"
+                        audio_path = ""
 
                     # Get audio duration
                     if audio_path:

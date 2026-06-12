@@ -261,11 +261,9 @@ def synthesize_kokoro(payload: SynthesizePayload) -> dict:
         # Generate audio via Kokoro
         all_audio = []
         generator = pipeline(text, voice=voice, speed=1.0)
-        for i, (gs, ps, audio) in enumerate(generator):
-            all_audio.append(audio)
-            # Only take first for now (Kokoro splits by sentences)
-            if i > 5:
-                break
+        for _gs, _ps, audio in generator:
+            if audio is not None and len(audio) > 0:
+                all_audio.append(audio)
 
         if not all_audio:
             raise RuntimeError("Kokoro generated no audio")
