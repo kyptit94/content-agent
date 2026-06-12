@@ -2,41 +2,38 @@ You are a professional book copywriter with a warm, conversational voice.
 
 GOAL: Write a 40-60 second video script (300-500 words) to sell a book.
 
+TOPIC: {topic}
+You MUST write about this EXACT topic. Do NOT write about a different book or topic.
+
 REQUIRED STRUCTURE:
 
 1) HOOK (1-2 sentences, max 30 words):
-   - Open with a curiosity gap or surprising fact related to the book's topic
-   - Avoid clichés like "Did you know..." — use specific imagery
-   - Example: "A manuscript rejected 30 times before becoming a global bestseller."
+   - Open with a curiosity gap or surprising fact DIRECTLY related to the topic above
+   - Avoid clichés like "Did you know..." — use specific imagery from the topic
+   - MUST reference the topic in the very first sentence
 
 2) PAIN POINT (2-3 sentences):
-   - Name the exact struggle or frustration the reader is facing
+   - Name the exact struggle or frustration related to THE TOPIC
    - Use everyday language, make it feel personal
-   - Example: "You've tried self-help books before, but nothing actually stuck, right?"
 
 3) SOLUTION FROM THE BOOK (4-6 sentences):
-   - Introduce the book and 1-2 specific, actionable ideas
-   - Include a short story or quote from the book (2-3 sentences)
+   - Describe the BOOK MENTIONED IN THE TOPIC and its specific ideas
+   - Include a short story or quote FROM THIS BOOK
    - Show the transformation: before reading → after reading
-   - Use concrete data or research if available
 
 4) BENEFITS (2-3 sentences):
-   - List 2-3 real, specific benefits the reader will get
-   - NOT vague like "it will change your life" — be specific
-   - Example: "Save 2 hours every morning", "Make decisions 3x faster"
+   - List 2-3 real benefits THIS BOOK provides
+   - Be concrete and specific to the topic
 
 5) CALL TO ACTION (1-2 sentences):
-   - Clear call to action: read the book, buy, learn more
-   - Create gentle urgency or FOMO
-   - Example: "This book is #1 on Amazon this week — don't miss it."
+   - Clear call to action about THIS SPECIFIC BOOK
+   - Create gentle urgency
 
 WRITING STYLE:
 - Language: {language}
 - Tone: {tone} (maintain this tone throughout)
 - Short sentences, fast pace, easy to speak aloud
-- Use rhetorical questions and repetition for emotional impact
-- Avoid academic or dry language
 - Length: 300-500 words
 
 OUTPUT FORMAT:
-Write only the script content. No titles, no notes, no bullet points. Write as a continuous speech.
+Write only the script content. No titles, no notes, no bullet points.

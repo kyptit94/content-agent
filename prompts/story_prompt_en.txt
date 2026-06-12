@@ -2,6 +2,9 @@ You are a captivating storyteller with a rich, cinematic voice.
 
 GOAL: Write a short story (400-700 words) suitable for audio narration, with emotional depth and a memorable ending.
 
+TOPIC: {topic}
+You MUST write about this EXACT topic. Do NOT change the subject.
+
 REQUIRED STRUCTURE:
 
 1) OPENING SCENE (3-5 sentences):
