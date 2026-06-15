@@ -202,6 +202,11 @@ def web_home() -> str:
         border: 1px solid var(--line);
       }
       button.secondary:hover { border-color: var(--accent); }
+      button.danger {
+        background: #ef444422;
+        color: var(--red);
+        border: 1px solid #ef444455;
+      }
 
       .mode-grid {
         display: grid;
@@ -325,6 +330,108 @@ def web_home() -> str:
         white-space: pre-wrap;
         border: 1px solid var(--line);
       }
+
+      /* ---- Modal ---- */
+      .modal-backdrop {
+        position: fixed;
+        inset: 0;
+        background: rgba(5, 7, 16, 0.85);
+        display: none;
+        align-items: center;
+        justify-content: center;
+        padding: 20px;
+        z-index: 50;
+      }
+      .modal-backdrop.open { display: flex; }
+      .modal {
+        width: min(900px, 100%);
+        max-height: 85vh;
+        overflow: auto;
+        background: var(--card);
+        border-radius: 16px;
+        border: 1px solid var(--line);
+        box-shadow: 0 30px 80px rgba(5, 7, 16, 0.6);
+        padding: 20px;
+      }
+      .modal-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 14px;
+      }
+      .modal-title { margin: 0; font-size: 18px; font-weight: 800; color: var(--accent-glow); }
+
+      .job-list { display: grid; gap: 10px; }
+      .job-card {
+        background: var(--bg);
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        padding: 12px;
+      }
+      .job-card.failed { border-color: #ef444444; background: #ef44440a; }
+      .job-head {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        align-items: flex-start;
+      }
+      .job-title-text { font-weight: 700; margin: 0; }
+      .job-status-badge {
+        font-size: 11px;
+        font-weight: 700;
+        padding: 2px 8px;
+        border-radius: 999px;
+        white-space: nowrap;
+      }
+      .job-status-badge.queued { background: #6366f122; color: #818cf8; }
+      .job-status-badge.running { background: #f59e0b22; color: #fbbf24; }
+      .job-status-badge.completed { background: #10b98122; color: #34d399; }
+      .job-status-badge.failed { background: #ef444422; color: #fca5a5; }
+      .job-meta {
+        margin-top: 6px;
+        color: var(--muted);
+        font-size: 11px;
+        line-height: 1.5;
+      }
+      .job-actions {
+        display: flex;
+        gap: 6px;
+        flex-wrap: wrap;
+        margin-top: 10px;
+      }
+      .job-actions button { margin-top: 0; font-size: 12px; padding: 6px 10px; width: auto; }
+      .job-error {
+        margin-top: 8px;
+        color: #fca5a5;
+        background: #ef444412;
+        border: 1px solid #ef444433;
+        border-radius: 8px;
+        padding: 6px 10px;
+        font-size: 11px;
+        white-space: pre-wrap;
+        max-height: 80px;
+        overflow: auto;
+      }
+      .mini-progress {
+        margin-top: 8px;
+      }
+      .mini-progress-bar {
+        height: 6px;
+        border-radius: 999px;
+        background: var(--line);
+        overflow: hidden;
+      }
+      .mini-progress-fill {
+        height: 100%;
+        background: linear-gradient(135deg, var(--accent), #6366f1);
+        transition: width 0.3s;
+      }
+      .mini-progress-label {
+        margin-top: 4px;
+        color: var(--muted);
+        font-size: 11px;
+      }
     </style>
   </head>
   <body>
@@ -337,6 +444,9 @@ def web_home() -> str:
           <span id="stepDot2" class="step-dot">2</span>
           <span id="stepDot3" class="step-dot">3</span>
           <span id="stepDot4" class="step-dot">4</span>
+        </div>
+        <div style="margin-top:14px">
+          <button class="secondary" onclick="openResultsModal()" style="width:auto;margin-top:0">📋 View All Jobs</button>
         </div>
       </div>
 
@@ -489,6 +599,31 @@ def web_home() -> str:
       </div>
     </div>
 
+    <!-- Results Modal -->
+    <div id="resultsModalBackdrop" class="modal-backdrop" onclick="if (event.target === this) closeResultsModal()">
+      <div class="modal">
+        <div class="modal-head">
+          <h3 class="modal-title">Job Results</h3>
+          <button class="secondary" onclick="closeResultsModal()" style="margin-top:0;width:auto">Close</button>
+        </div>
+        <div class="modal-body">
+          <button class="secondary" onclick="loadJobs()" style="width:auto">Refresh List</button>
+          <div id="jobsList" class="job-list" style="margin-top:10px"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Detail Modal -->
+    <div id="detailModalBackdrop" class="modal-backdrop" onclick="if (event.target === this) closeDetailModal()">
+      <div class="modal">
+        <div class="modal-head">
+          <h3 id="detailModalTitle" class="modal-title">Job Detail</h3>
+          <button class="secondary" onclick="closeDetailModal()" style="margin-top:0;width:auto">Close</button>
+        </div>
+        <div id="detailModalBody" class="modal-body"></div>
+      </div>
+    </div>
+
     <script>
       const tokenInput = document.getElementById('tokenInput');
       let currentMode = 'horror';
@@ -497,8 +632,8 @@ def web_home() -> str:
       let selectedTitle = '';
       let selectedContent = '';
       let currentStep = 1;
+      let activeVideoObjectUrl = '';
 
-      // Init
       tokenInput.value = localStorage.getItem('adminToken') || '';
       syncVideoInputs();
 
@@ -512,6 +647,12 @@ def web_home() -> str:
         const resp = await fetch(url, options);
         if (!resp.ok) throw new Error(await resp.text());
         return await resp.json();
+      }
+
+      async function fetchBlob(url) {
+        const resp = await fetch(url, { headers: { 'x-admin-token': getToken() } });
+        if (!resp.ok) throw new Error(await resp.text());
+        return await resp.blob();
       }
 
       function setStep(n) {
@@ -539,7 +680,6 @@ def web_home() -> str:
         currentMode = mode;
         document.querySelectorAll('.mode-card').forEach(c => c.classList.remove('selected'));
         document.querySelector(`[data-mode="${mode}"]`).classList.add('selected');
-        // Reset selection
         selectedOptionIndex = -1;
         selectedTitle = '';
         selectedContent = '';
@@ -618,7 +758,6 @@ def web_home() -> str:
       }
 
       function confirmAudioVideo() {
-        // Build review
         const lang = document.getElementById('langInput').value || 'en';
         const tone = document.getElementById('toneInput').value || 'friendly';
         const kokoroVoice = document.getElementById('kokoroVoice').value;
@@ -672,7 +811,7 @@ def web_home() -> str:
           document.getElementById('jobResult').innerText = 'Job submitted: ' + data.job_id;
           document.getElementById('jobResult').className = 'status-msg';
           document.getElementById('jobActions').innerHTML = `
-            <button class="secondary" onclick="window.open('/web/jobs/${data.job_id}/video?' + new URLSearchParams({token: getToken()}), '_blank')">Preview Video</button>
+            <button class="secondary" onclick="viewJobDetail('${data.job_id}')">View Details</button>
           `;
         } catch (e) {
           document.getElementById('jobResult').innerText = 'Error: ' + e.message;
@@ -680,7 +819,130 @@ def web_home() -> str:
         }
       }
 
-      // Initial step
+      // ---- Jobs Modal ----
+      function openResultsModal() {
+        document.getElementById('resultsModalBackdrop').classList.add('open');
+        loadJobs();
+      }
+      function closeResultsModal() {
+        document.getElementById('resultsModalBackdrop').classList.remove('open');
+      }
+
+      async function loadJobs() {
+        const container = document.getElementById('jobsList');
+        container.innerHTML = '<div class="status-msg">Loading...</div>';
+        try {
+          const data = await api('/web/jobs?limit=30');
+          renderJobs(data.items || []);
+        } catch (e) {
+          container.innerHTML = `<div class="status-msg error">Error: ${escapeHtml(e.message)}</div>`;
+        }
+      }
+
+      function renderJobs(items) {
+        const container = document.getElementById('jobsList');
+        if (!items.length) {
+          container.innerHTML = '<div class="status-msg">No jobs yet.</div>';
+          return;
+        }
+
+        const statusLabels = { queued: 'Queued', running: 'Running', review_pending: 'Review', completed: 'Completed', failed: 'Failed' };
+
+        container.innerHTML = items.map(item => {
+          const status = item.status || 'unknown';
+          const title = escapeHtml(item.title || item.topic || 'Untitled');
+          const jobId = escapeHtml(item.job_id || '');
+          const mode = escapeHtml(item.mode || '');
+          const stage = escapeHtml(item.current_stage || item.stage_detail || '');
+          const pct = Math.max(0, Math.min(Number(item.progress_percent || 0), 100));
+
+          const meta = [
+            `ID: ${jobId}`,
+            `Mode: ${mode}`,
+            item.started_at ? `Started: ${item.started_at}` : '',
+            item.completed_at ? `Completed: ${item.completed_at}` : '',
+            item.failed_at ? `Failed: ${item.failed_at}` : '',
+          ].filter(Boolean).join('<br/>');
+
+          const errorBlock = item.error ? `<div class="job-error">${escapeHtml(item.error)}</div>` : '';
+
+          const progressBlock = (status === 'running' || status === 'completed')
+            ? `<div class="mini-progress">
+                <div class="mini-progress-bar"><div class="mini-progress-fill" style="width:${pct}%"></div></div>
+                <div class="mini-progress-label">${stage || 'Processing'} &bull; ${pct}%</div>
+              </div>`
+            : '';
+
+          const actions = [];
+          if (status === 'completed') {
+            actions.push(`<button class="secondary" onclick="window.open('/web/jobs/${jobId}/video?token='+encodeURIComponent(getToken()), '_blank')">Preview Video</button>`);
+          }
+          if (status === 'failed') {
+            actions.push(`<button class="secondary" onclick="retryJob('${jobId}')">Retry</button>`);
+          }
+          actions.push(`<button class="secondary" onclick="viewJobDetail('${jobId}')">View Details</button>`);
+          actions.push(`<button class="danger" onclick="deleteJob('${jobId}')">Delete</button>`);
+
+          return `
+            <div class="job-card ${status === 'failed' ? 'failed' : ''}">
+              <div class="job-head">
+                <p class="job-title-text">${title}</p>
+                <span class="job-status-badge ${status}">${escapeHtml(statusLabels[status] || status)}</span>
+              </div>
+              <div class="job-meta">${meta}</div>
+              ${progressBlock}
+              ${errorBlock}
+              <div class="job-actions">${actions.join('')}</div>
+            </div>
+          `;
+        }).join('');
+      }
+
+      async function viewJobDetail(jobId) {
+        try {
+          const data = await api(`/web/jobs/${jobId}`);
+          let videoHtml = '';
+          if (data.outputs && data.outputs.video_path) {
+            videoHtml = `<video controls playsinline style="width:100%;max-height:50vh;border-radius:12px;background:#000" src="/web/jobs/${jobId}/video?token=${encodeURIComponent(getToken())}"></video>`;
+          } else {
+            videoHtml = '<div class="status-msg">No video yet.</div>';
+          }
+          document.getElementById('detailModalTitle').innerText = `Job ${jobId}`;
+          document.getElementById('detailModalBody').innerHTML = `
+            ${videoHtml}
+            <pre style="margin-top:12px">${escapeHtml(JSON.stringify(data, null, 2))}</pre>
+          `;
+          document.getElementById('detailModalBackdrop').classList.add('open');
+        } catch (e) {
+          alert(e.message);
+        }
+      }
+      function closeDetailModal() {
+        if (activeVideoObjectUrl) { URL.revokeObjectURL(activeVideoObjectUrl); activeVideoObjectUrl = ''; }
+        document.getElementById('detailModalBackdrop').classList.remove('open');
+      }
+
+      async function deleteJob(jobId) {
+        if (!confirm('Delete job ' + jobId + '?')) return;
+        try {
+          await api('/web/jobs/' + jobId, { method: 'DELETE' });
+          await loadJobs();
+        } catch (e) {
+          alert(e.message);
+        }
+      }
+
+      async function retryJob(jobId) {
+        try {
+          const data = await api('/web/jobs/' + jobId + '/retry', { method: 'POST' });
+          alert('Retry job created: ' + data.job_id);
+          await loadJobs();
+        } catch (e) {
+          alert(e.message);
+        }
+      }
+
+      // Initial
       if (getToken() && tokenInput.value.trim()) {
         setStep(2);
       } else {
