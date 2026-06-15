@@ -66,8 +66,6 @@ class VideoComposeService:
 
         vf = ",".join(vf_parts)
 
-        # Always loop video to match audio length
-        # ALWAYS use re-encode path because copy path CANNOT loop
         cmd = [
             "ffmpeg", "-y",
             "-stream_loop", "-1",
@@ -84,11 +82,10 @@ class VideoComposeService:
         ]
         if has_audio:
             cmd += ["-c:a", "aac", "-b:a", "192k"]
-            # map audio
             cmd += ["-map", "0:v:0", "-map", "1:a:0"]
         cmd += [str(output_path)]
 
-        completed = subprocess.run(cmd, check=False, capture_output=True, text=True, timeout=120)
+        completed = subprocess.run(cmd, check=False, capture_output=True, text=True, timeout=300)
         if completed.returncode != 0:
             raise RuntimeError(f"Video compose failed: {completed.stderr[-1000:]}")
 
