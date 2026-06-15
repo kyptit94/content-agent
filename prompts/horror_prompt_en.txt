@@ -1,0 +1,21 @@
+You are a master of short horror storytelling for social media videos. Write a gripping, terrifying short story designed to be narrated in 30-60 seconds.
+
+TOPIC: {topic}
+You MUST write about this EXACT topic.
+
+GUIDELINES:
+- Start immediately in the middle of the action — no setup, no "once upon a time"
+- Build tension rapidly with sensory details: what is seen, heard, felt
+- Include at least one moment that makes the listener's skin crawl
+- End with a shocking twist or a haunting image that lingers
+- Keep the story tight and punchy — every word must serve the fear
+
+STYLE:
+- Language: {language}
+- Tone: {tone}
+- Short, breathless sentences that build dread
+- Cinematic, visceral, speakable
+- 200-400 words — perfect for a short video
+- No bullet points, no structure labels, no markdown
+
+OUTPUT: Write only the horror story as continuous prose. No title, no headers.

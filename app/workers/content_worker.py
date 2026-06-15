@@ -33,15 +33,18 @@ def main() -> None:
         job_id = payload["job_id"]
         if queue.is_job_deleted(job_id):
             continue
-        mode = payload["mode"]
-        topic = payload["topic"]
-        language = payload["language"]
-        tone = payload["tone"]
-        use_gemini_refine = payload["use_gemini_refine"]
-        create_audio = payload["create_audio"]
+
+        mode = payload.get("mode", "horror")
+        # Use pre-generated title + content (Step 2: user already selected)
+        title = payload.get("title", payload.get("topic", ""))
+        content = payload.get("content", "")
+        language = payload.get("language", "en")
+        tone = payload.get("tone", "friendly")
+        use_gemini_refine = payload.get("use_gemini_refine", False)
+        create_audio = payload.get("create_audio", True)
         create_video = payload.get("create_video", False)
         video_source_type = payload.get("video_source_type", "internet")
-        video_keyword = payload.get("video_keyword") or topic
+        video_keyword = payload.get("video_keyword") or title
         user_video_path = payload.get("user_video_path")
         notify_telegram = bool(payload.get("notify_telegram", False))
         notify_chat_id = payload.get("telegram_chat_id") or settings.telegram_chat_id
@@ -53,7 +56,7 @@ def main() -> None:
                     "job_id": job_id,
                     "status": "running",
                     "mode": mode,
-                    "topic": topic,
+                    "title": title,
                     "started_at": datetime.utcnow().isoformat(),
                     "current_stage": stage,
                     "progress_percent": percent,
@@ -63,26 +66,19 @@ def main() -> None:
             )
 
         try:
-            content = ""
             markdown_path = ""
             audio_path = ""
             srt_content = ""
             audio_error = ""
             audio_duration_sec = None
 
-            # === Step 1: Generate content ===
-            set_running_status(stage="generating_content", percent=10, detail="Writing script")
-            content = llm.generate(
-                mode=mode,
-                topic=topic,
-                tone=tone,
-                language=language,
-                use_gemini_refine=use_gemini_refine,
-                feedback_note=None,
-            )
+            # === Save pre-generated content to markdown ===
+            set_running_status(stage="saving_content", percent=10, detail="Saving selected script")
+            if not content:
+                raise RuntimeError("No content provided — please select a content option first")
             markdown_path = storage.save_markdown(job_id=job_id, content=content)
 
-            # === Step 2: Generate audio ===
+            # === Generate audio ===
             if create_audio:
                 set_running_status(stage="generating_audio", percent=35, detail="Creating voiceover")
                 tts_text = content[:5000]
@@ -115,7 +111,7 @@ def main() -> None:
                         speaking_rate = 5.0 if is_english else 6.0
                         audio_duration_sec = len(content) / speaking_rate
 
-            # === Step 3: Auto-compose video immediately (no review step) ===
+            # === Auto-compose video ===
             video_path = ""
             video_source = ""
             if create_video:
@@ -159,7 +155,7 @@ def main() -> None:
                     job_id=job_id,
                     source_video_path=source_path,
                     audio_path=audio_path or None,
-                    title=topic,
+                    title=title,
                     preserve_quality=settings.video_preserve_quality,
                     overlay_text=settings.video_text_overlay,
                     subtitle_path=subtitle_path,
@@ -174,7 +170,7 @@ def main() -> None:
                     "job_id": job_id,
                     "status": "completed",
                     "mode": mode,
-                    "topic": topic,
+                    "title": title,
                     "completed_at": datetime.utcnow().isoformat(),
                     "current_stage": "completed",
                     "progress_percent": 100,
@@ -196,13 +192,13 @@ def main() -> None:
                         telegram.send_file_to_chat(
                             chat_id=notify_chat_id,
                             file_path=video_path,
-                            caption=f"[{job_id}] {topic}",
+                            caption=f"[{job_id}] {title}",
                         )
                     except Exception:
                         pass
                 telegram.send_to_chat(
                     chat_id=notify_chat_id,
-                    text=f"[{job_id}] Done\nTopic: {topic}",
+                    text=f"[{job_id}] Done\nTitle: {title}",
                 )
 
         except Exception as exc:
@@ -212,7 +208,7 @@ def main() -> None:
                     "job_id": job_id,
                     "status": "failed",
                     "mode": mode,
-                    "topic": topic,
+                    "title": title,
                     "failed_at": datetime.utcnow().isoformat(),
                     "error": str(exc),
                     "payload": payload,
@@ -221,7 +217,7 @@ def main() -> None:
             if notify_telegram and notify_chat_id and telegram.enabled:
                 telegram.send_to_chat(
                     chat_id=notify_chat_id,
-                    text=f"[{job_id}] Failed\nTopic: {topic}\nError: {exc}",
+                    text=f"[{job_id}] Failed\nTitle: {title}\nError: {exc}",
                 )
 
 

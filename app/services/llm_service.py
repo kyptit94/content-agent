@@ -11,6 +11,25 @@ from app.config import settings
 
 _PROMPT_DIR = Path(__file__).resolve().parent.parent.parent / "prompts"
 
+# Map new mode names to prompt file names
+_MODE_PROMPT_FILE: dict[str, str] = {
+    "horror": "horror_prompt",
+    "wealth": "wealth_prompt",
+    "softskills": "softskills_prompt",
+    "mystery": "mystery_prompt",
+    # backward compat
+    "sales": "wealth_prompt",
+    "story": "horror_prompt",
+}
+
+# Human-friendly labels for modes
+_MODE_LABELS: dict[str, str] = {
+    "horror": "Horror Story",
+    "wealth": "Wealth & Success",
+    "softskills": "Soft Skills",
+    "mystery": "World Mysteries",
+}
+
 
 class LLMService:
     def __init__(self) -> None:
@@ -19,17 +38,23 @@ class LLMService:
 
     @staticmethod
     def _load_prompt(mode: str, language: str = "en") -> str:
-        # Map language to prompt file suffix
-        lang_suffix = "en" if language.lower().startswith("en") else "vi"
-        filename = f"{mode}_prompt_{lang_suffix}.txt"
+        # Map mode to prompt base filename
+        prompt_base = _MODE_PROMPT_FILE.get(mode)
+        if not prompt_base:
+            return ""
+
+        # English-only for these content types
+        filename = f"{prompt_base}_en.txt"
         filepath = _PROMPT_DIR / filename
         if filepath.exists():
             return filepath.read_text(encoding="utf-8").strip()
-        # Fallback: try VI if EN not found
-        if lang_suffix == "en":
-            fallback = _PROMPT_DIR / f"{mode}_prompt_vi.txt"
-            if fallback.exists():
-                return fallback.read_text(encoding="utf-8").strip()
+
+        # Try with language suffix if not en
+        lang_suffix = "en" if language.lower().startswith("en") else "vi"
+        fallback = _PROMPT_DIR / f"{prompt_base}_{lang_suffix}.txt"
+        if fallback.exists():
+            return fallback.read_text(encoding="utf-8").strip()
+
         return ""
 
     @staticmethod
@@ -122,7 +147,7 @@ class LLMService:
             return True
         return self._is_risky_topic(topic)
 
-    def _call_ollama(self, prompt: str, num_predict: int = 2000, temperature: float = 0.85) -> str:
+    def _call_ollama(self, prompt: str, num_predict: int = 2000, temperature: float = 0.85, max_tokens: int = 2000) -> str:
         response = requests.post(
             f"{self.ollama_base_url}/api/generate",
             json={
@@ -135,28 +160,6 @@ class LLMService:
         )
         response.raise_for_status()
         return response.json().get("response", "").strip()
-
-    def _build_local_generation(self, mode: str, topic: str, tone: str, language: str, feedback_note: str | None) -> str:
-        if mode == "story":
-            lines = [
-                f"Mo bai: {topic}.",
-                f"Than bai: Ke cau chuyen theo giong {tone}, tap trung vao xung dot va cam xuc ro rang.",
-                "Cao trao: day lanh chuyen bien bat ngo nhung van giu dung y nghia ban dau.",
-                "Ket: dong lai bang 1 cau nhan thuc hoac bai hoc de nguoi xem nho lau hon.",
-            ]
-        else:
-            lines = [
-                f"Hook: {topic}.",
-                f"Van de: Neu ban con do du hay bo lo viec doc sach, day la phan ban can nghe.",
-                f"Loi ich: Cach tiep can nay giup ban duy tri thoi quen doc deu hon voi giong van {tone}.",
-                "CTA: Thu ngay hom nay voi 10 phut doc sach truoc khi ngu.",
-            ]
-
-        if feedback_note:
-            lines.append(f"Dieu chinh: {feedback_note}")
-
-        lines.append(f"Ngon ngu: {language}")
-        return "\n".join(lines)
 
     def _call_gemini(self, prompt: str) -> str:
         if not settings.gemini_api_key:
@@ -205,7 +208,6 @@ class LLMService:
         try:
             verdict = self._call_gemini(guard_prompt)
         except Exception:
-            # Fail-open to avoid blocking normal operation when Gemini is temporarily unavailable.
             return True, "gemini-check-failed"
 
         self._cache_set(
@@ -220,6 +222,143 @@ class LLMService:
             return False, reason or "policy"
         return True, "ok"
 
+    # ------------------------------------------------------------------
+    # STEP 1: Generate multiple title+content options for user to choose
+    # ------------------------------------------------------------------
+    def generate_options(
+        self,
+        mode: str,
+        language: str = "en",
+        tone: str = "friendly",
+        count: int = 3,
+    ) -> list[dict[str, str]]:
+        """
+        Generate `count` pairs of (title, content) so the user can pick one.
+        Returns list of {"title": "...", "content": "..."}
+        """
+        # Normalize mode
+        resolved_mode = _MODE_PROMPT_FILE.get(mode) and mode or "horror"
+        mode_label = _MODE_LABELS.get(resolved_mode, resolved_mode.title())
+
+        base_prompt = self._load_prompt(mode=resolved_mode, language=language)
+        if not base_prompt:
+            # Build a simple fallback prompt
+            base_prompt = (
+                f"You are a short-form content creator for {mode_label} videos.\n"
+                "Write a compelling 250-400 word narrative.\n"
+                "Language: {language}; Tone: {tone}; Topic: {topic}"
+            )
+
+        # Build a single prompt that asks for multiple options
+        prompt = (
+            f"Generate {count} DIFFERENT short video content ideas for {mode_label}.\n\n"
+            "For each idea, output exactly in this format:\n"
+            "---IDEA---\n"
+            "TITLE: <a catchy, scroll-stopping title for the video>\n"
+            "CONTENT:\n"
+            "<the full narrative script>\n\n"
+            f"{base_prompt}\n"
+            f"Language: {language}\n"
+            f"Tone: {tone}\n\n"
+            f"IMPORTANT: Generate exactly {count} ideas. Each must start with ---IDEA--- on its own line.\n"
+            "Make each idea completely different — different angles, different hooks.\n"
+            "Titles should be in English, short, and highly clickable (max 12 words)."
+        )
+
+        try:
+            result = self._call_ollama(prompt, num_predict=4000, temperature=0.9)
+        except Exception:
+            # Fallback: generate one option at a time
+            return self._fallback_generate_options_single(
+                mode=resolved_mode, language=language, tone=tone, count=count
+            )
+
+        options = self._parse_multi_idea(result)
+        if len(options) < 2:
+            # Not enough parsed, do single fallback
+            return self._fallback_generate_options_single(
+                mode=resolved_mode, language=language, tone=tone, count=count
+            )
+
+        # Trim to requested count
+        return options[:count]
+
+    def _parse_multi_idea(self, text: str) -> list[dict[str, str]]:
+        """Parse LLM output with ---IDEA--- delimiters into title+content pairs."""
+        blocks = text.split("---IDEA---")
+        options: list[dict[str, str]] = []
+
+        for block in blocks:
+            block = block.strip()
+            if not block:
+                continue
+
+            title = ""
+            content = ""
+
+            # Try to extract TITLE: line
+            lines = block.splitlines()
+            content_start_idx = 0
+            for i, line in enumerate(lines):
+                stripped = line.strip()
+                if stripped.lower().startswith("title:"):
+                    title = stripped.split(":", maxsplit=1)[1].strip().strip('"')
+                    content_start_idx = i + 1
+                    break
+
+            # Content starts after "CONTENT:" if present
+            for i in range(content_start_idx, len(lines)):
+                if lines[i].strip().lower().startswith("content:"):
+                    content_start_idx = i + 1
+                    break
+
+            content = "\n".join(lines[content_start_idx:]).strip()
+
+            if content and len(content) > 50:
+                if not title:
+                    # Generate title from first sentence
+                    title = content.split(".")[0].strip()[:100]
+                options.append({"title": title, "content": content})
+
+        return options
+
+    def _fallback_generate_options_single(
+        self, mode: str, language: str, tone: str, count: int
+    ) -> list[dict[str, str]]:
+        """Fallback: generate one option at a time via suggest_topic + generate."""
+        mode_label = _MODE_LABELS.get(mode, mode.title())
+        options: list[dict[str, str]] = []
+        seen_titles: set[str] = set()
+
+        for _ in range(count):
+            topic = self.suggest_topic(mode=mode, language=language)
+            # Avoid duplicate topics
+            retries = 0
+            while topic in seen_titles and retries < 3:
+                topic = self.suggest_topic(mode=mode, language=language)
+                retries += 1
+            seen_titles.add(topic)
+
+            try:
+                content = self.generate(
+                    mode=mode,
+                    topic=topic,
+                    tone=tone,
+                    language=language,
+                    use_gemini_refine=False,
+                )
+                options.append({"title": topic, "content": content})
+            except Exception:
+                options.append({
+                    "title": topic,
+                    "content": f"Content for: {topic}\n\n[Generation failed, please retry]",
+                })
+
+        return options
+
+    # ------------------------------------------------------------------
+    # STEP 2 (after user picks): Generate from selected option
+    # ------------------------------------------------------------------
     def generate(
         self,
         mode: str,
@@ -232,12 +371,15 @@ class LLMService:
         allowed, reason = self._gemini_precheck(mode=mode, topic=topic, tone=tone, language=language)
         if not allowed:
             return (
-                "Yêu cầu này không vượt qua lớp kiểm duyệt an toàn trước khi tạo nội dung. "
-                f"Lý do: {reason}."
+                "This request did not pass the content safety precheck. "
+                f"Reason: {reason}."
             )
 
+        # Normalize mode
+        resolved_mode = _MODE_PROMPT_FILE.get(mode) and mode or "horror"
+
         # --- Build prompt from file ---
-        base_prompt = self._load_prompt(mode=mode, language=language)
+        base_prompt = self._load_prompt(mode=resolved_mode, language=language)
         if base_prompt:
             local_prompt = (
                 base_prompt
@@ -246,24 +388,17 @@ class LLMService:
                 .replace("{topic}", topic)
             )
         else:
-            # Fallback: inline prompt if file missing
-            if mode == "sales":
-                local_prompt = (
-                    "Bạn là copywriter bán sách. Hãy tạo nội dung bán sách có cấu trúc: "
-                    "hook, vấn đề, lợi ích, CTA rõ ràng."
-                    f"\nNgôn ngữ: {language}; Giọng văn: {tone}; Chủ đề sách: {topic}"
-                )
-            else:
-                local_prompt = (
-                    "Bạn là tác giả kể chuyện. Viết một câu chuyện ngắn có mở bài, cao trào và kết. "
-                    "Sử dụng nhiều hình ảnh, đối thoại, miêu tả nội tâm."
-                    f"\nNgôn ngữ: {language}; Giọng văn: {tone}; Chủ đề: {topic}"
-                )
+            mode_label = _MODE_LABELS.get(resolved_mode, resolved_mode.title())
+            local_prompt = (
+                f"You are a short-form content creator for {mode_label} videos.\n"
+                "Write a compelling, natural narrative for voiceover.\n"
+                f"Language: {language}; Tone: {tone}; Topic: {topic}\n"
+                "200-400 words, continuous prose, no labels or markdown."
+            )
 
         if feedback_note:
             local_prompt += (
-                "\n\nYêu cầu chỉnh sửa ngắn gọn từ người dùng (ưu tiên làm đúng): "
-                f"{feedback_note}"
+                f"\n\nUser revision request (follow this carefully): {feedback_note}"
             )
 
         # --- First pass: generate initial content ---
@@ -294,24 +429,14 @@ class LLMService:
             return local_output
 
         # --- Second pass: Gemini refine + expand ---
-        if mode == "sales":
-            refine_instruction = (
-                "Hãy mở rộng và tinh chỉnh nội dung bán sách dưới đây. "
-                "Yêu cầu: giữ nguyên cấu trúc (hook → nỗi đau → giải pháp → lợi ích → CTA), "
-                "thêm chi tiết cụ thể, câu chuyện nhỏ, hình ảnh sinh động. "
-                "Viết dài hơn bản gốc (tối thiểu 350 chữ), câu ngắn, dễ đọc, hấp dẫn. "
-                "Giữ đúng ý nghĩa và mục tiêu ban đầu.\n\n"
-                f"Nội dung gốc:\n{local_output}"
-            )
-        else:
-            refine_instruction = (
-                "Hãy mở rộng và tinh chỉnh câu chuyện dưới đây. "
-                "Yêu cầu: giữ nguyên cốt truyện và cao trào, "
-                "thêm chi tiết miêu tả (cảnh vật, cảm xúc, đối thoại) để câu chuyện dài hơn và giàu cảm xúc hơn. "
-                "Viết dài hơn bản gốc (tối thiểu 400 chữ). "
-                "Giữ đúng ý nghĩa và mục tiêu ban đầu.\n\n"
-                f"Nội dung gốc:\n{local_output}"
-            )
+        refine_instruction = (
+            "Polish and expand the short-form social media content below.\n"
+            "Requirements: keep the original message, tone, and hook intact.\n"
+            "Add richer sensory details, stronger emotional beats, and smoother flow.\n"
+            "Write longer than the original (minimum 300 characters).\n"
+            "Keep it continuous prose — no labels, no bullet points, no markdown.\n\n"
+            f"Original content:\n{local_output}"
+        )
 
         refine_key_seed = f"expand|{settings.gemini_model}|{language}|{mode}|{local_output}"
         refine_cache_key = f"gemini:refine:{self._hash_text(refine_key_seed)}"
@@ -321,7 +446,6 @@ class LLMService:
 
         try:
             refined = self._call_gemini(refine_instruction)
-            # If refined output is too short, use original
             refined = refined or local_output
             self._cache_set(
                 key=refine_cache_key,
@@ -332,56 +456,87 @@ class LLMService:
         except Exception:
             return local_output
 
-    def suggest_topic(self, mode: str, language: str = "vi") -> str:
-        recent_topics = self._recent_topics_get(mode=mode, language=language)
+    def _build_local_generation(
+        self, mode: str, topic: str, tone: str, language: str, feedback_note: str | None
+    ) -> str:
+        mode_label = _MODE_LABELS.get(mode, mode.title())
+        lines = [
+            f"Opening hook for {mode_label}: {topic}.",
+            f"Main body with tone: {tone}. Engage the viewer with a compelling narrative.",
+            f"Strong payoff or twist ending that leaves an impression.",
+            f"Language: {language}.",
+        ]
+        if feedback_note:
+            lines.append(f"Revision: {feedback_note}")
+        return "\n".join(lines)
+
+    # ------------------------------------------------------------------
+    # Topic suggestion for each mode
+    # ------------------------------------------------------------------
+    def suggest_topic(self, mode: str, language: str = "en") -> str:
+        resolved_mode = _MODE_PROMPT_FILE.get(mode) and mode or "horror"
+        mode_label = _MODE_LABELS.get(resolved_mode, resolved_mode.title())
+
+        recent_topics = self._recent_topics_get(mode=resolved_mode, language=language)
         avoid_block = ""
         if recent_topics:
-            avoid_block = "\nKhông được lặp lại hoặc quá giống các chủ đề sau: " + " | ".join(recent_topics)
+            avoid_block = "\nDo NOT repeat or closely resemble these recent topics: " + " | ".join(recent_topics)
 
         prompt = (
-            "Đề xuất DUY NHẤT 1 chủ đề video ngắn, viết đúng 1 dòng, không danh sách. "
-            "Chủ đề phải cụ thể, đủ hay để làm nội dung 30-60 giây. "
-            "Mỗi lần phải đổi góc tiếp cận, không lặp lại mô-típ cũ."
-            f"\nMode: {mode}; Language: {language}"
+            f"Suggest ONE unique short video topic for {mode_label} content.\n"
+            "Write exactly 1 line, no lists, no explanations.\n"
+            "The topic must be specific, engaging, and suitable for a 30-60 second video.\n"
+            "Each time, pick a fresh angle — do not repeat patterns.\n"
+            f"Language: {language} (but the topic/title should be in English)\n"
             f"{avoid_block}"
         )
         try:
-            result = self._call_ollama(prompt)
+            result = self._call_ollama(prompt, num_predict=80, temperature=0.95)
             line = self._normalize_topic_line(result) if result else ""
-            topic = line or self._fallback_topic(mode=mode, language=language, recent_topics=recent_topics)
-            self._recent_topics_push(mode=mode, language=language, topic=topic)
+            topic = line or self._fallback_topic(mode=resolved_mode, language=language, recent_topics=recent_topics)
+            self._recent_topics_push(mode=resolved_mode, language=language, topic=topic)
             return topic
         except Exception:
-            topic = self._fallback_topic(mode=mode, language=language, recent_topics=recent_topics)
-            self._recent_topics_push(mode=mode, language=language, topic=topic)
+            topic = self._fallback_topic(mode=resolved_mode, language=language, recent_topics=recent_topics)
+            self._recent_topics_push(mode=resolved_mode, language=language, topic=topic)
             return topic
 
     @staticmethod
-    def _fallback_topic(mode: str, language: str = "vi", recent_topics: list[str] | None = None) -> str:
+    def _fallback_topic(mode: str, language: str = "en", recent_topics: list[str] | None = None) -> str:
         recent_topics = recent_topics or []
-        if mode == "story":
-            candidates = [
-                "Cuốn sách cũ trong tiệm đồ ve chai mở ra một lời hứa bí mật",
-                "Cô gái để quên một tấm bưu thiếp trong sách thư viện và 7 năm sau có người hồi âm",
-                "Người bán sách ven đường gặp lại vị khách cũ mang theo một bí mật gia đình",
-                "Một trang sách rơi ra trong ngày mưa dẫn tới cuộc gặp đổi đời",
-            ]
-        elif language.lower().startswith("vi"):
-            candidates = [
-                "Vì sao 10 phút đọc sách trước khi ngủ có thể đổi cách bạn nghĩ cả ngày hôm sau",
-                "3 dấu hiệu bạn đang chọn sai cuốn sách cho mục tiêu phát triển bản thân",
-                "Cách đọc 1 chương sách mà vẫn nhớ được ý chính để áp dụng ngay",
-                "1 thói quen nhỏ giúp bạn đọc đều hơn mà không cần ép bản thân",
-                "Tại sao người bận rộn vẫn có thể đọc hết 12 cuốn sách mỗi năm",
-            ]
-        else:
-            candidates = [
-                "Why reading 10 minutes before bed can change your next day focus",
-                "3 signs you are picking the wrong book for your current goal",
-                "A simple way to remember more from every chapter you read",
-                "One tiny reading habit that busy people can actually keep",
-            ]
 
-        available = [candidate for candidate in candidates if candidate not in recent_topics]
+        fallbacks: dict[str, list[str]] = {
+            "horror": [
+                "The Shadow That Didn't Belong to Anyone",
+                "She Woke Up to Find Her Reflection Smiling First",
+                "The Last Voicemail He Sent Before He Vanished",
+                "Something Was Living in the Walls of Room 304",
+                "The Baby Monitor Picked Up a Voice That Wasn't Hers",
+            ],
+            "wealth": [
+                "The 5-AM Rule That Built Millionaires",
+                "Why Your Savings Account Is Making You Poorer",
+                "The One Asset Nobody Told You to Buy at 20",
+                "How to Make Money While You Sleep — The Real Way",
+                "Stop Trading Time for Money: The Framework That Works",
+            ],
+            "softskills": [
+                "How to Say No Without Feeling Guilty — Ever Again",
+                "The 3-Second Pause That Makes You Sound Twice as Smart",
+                "Why People Forget What You Say But Remember How You Made Them Feel",
+                "The Listening Trick That Makes Anyone Trust You Instantly",
+                "How to Handle Criticism Without Getting Defensive",
+            ],
+            "mystery": [
+                "The Village Where Everyone Shared the Same Nightmare",
+                "The Radio Signal From Space That Science Can't Explain",
+                "They Found a City Under the Ice — Then Never Spoke of It Again",
+                "The Missing 411 Cases: People Who Vanished Without a Trace",
+                "A Door That Hadn't Been Opened in 400 Years — Until Now",
+            ],
+        }
+
+        candidates = fallbacks.get(mode, fallbacks["horror"])
+        available = [c for c in candidates if c not in recent_topics]
         pool = available or candidates
         return random.choice(pool)
