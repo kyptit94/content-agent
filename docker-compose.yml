@@ -62,6 +62,7 @@ services:
       - redis
       - ollama
       - voice
+    gpus: all
 
   voice:
     build:

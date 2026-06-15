@@ -9,6 +9,22 @@ class VideoComposeService:
         self.output_dir = Path("/app/data/outputs")
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
+    @staticmethod
+    def _detect_encoder() -> tuple[str, str]:
+        """Returns (video_codec, extra_args) preferring NVENC GPU, falling back to CPU."""
+        try:
+            probe = subprocess.run(
+                ["ffmpeg", "-hide_banner", "-encoders"],
+                capture_output=True, text=True, timeout=10,
+            )
+            if "h264_nvenc" in probe.stdout:
+                # GTX 1070 = NVENC, use GPU encoding
+                return ("h264_nvenc", ["-preset", "p1", "-tune", "ll"])
+        except Exception:
+            pass
+        # Fallback: CPU with veryfast preset
+        return ("libx264", ["-preset", "veryfast"])
+
     def compose(
         self,
         job_id: str,
@@ -31,7 +47,7 @@ class VideoComposeService:
         safe_title = title.replace("'", " ").replace(":", " ")[:90]
 
         # --- Get actual audio duration via ffprobe ---
-        duration_sec = 30.0  # default fallback
+        duration_sec = 30.0
         if has_audio:
             try:
                 probe = subprocess.run(
@@ -46,14 +62,16 @@ class VideoComposeService:
         else:
             duration_sec = audio_duration_sec or 30.0
 
-        # Duration must be reasonable
-        duration_sec = max(10.0, min(duration_sec, 60.0))  # clamp 10s-60s
+        duration_sec = max(10.0, min(duration_sec, 60.0))
 
-        # Build video filter chain with Ken Burns zoom
+        # Detect best encoder (GPU NVENC or CPU libx264)
+        vcodec, vcodec_opts = self._detect_encoder()
+
+        # Build video filter chain
         vf_parts = [
             "scale=1080:1920:force_original_aspect_ratio=increase",
             "crop=1080:1920",
-            f"zoompan=z='min(zoom+0.0004,1.06)':d=1:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=1080x1920:fps=30",
+            "zoompan=z='min(zoom+0.0004,1.06)':d=1:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=1080x1920:fps=30",
         ]
         if overlay_text:
             vf_parts.append(
@@ -68,24 +86,35 @@ class VideoComposeService:
 
         cmd = [
             "ffmpeg", "-y",
+            "-hwaccel", "auto",
             "-stream_loop", "-1",
             "-i", str(source),
         ]
         if has_audio:
             cmd += ["-i", audio_path]
+
         cmd += [
             "-t", str(duration_sec),
             "-vf", vf,
-            "-c:v", "libx264",
-            "-crf", str(settings.video_reencode_crf),
-            "-preset", settings.video_reencode_preset,
+            "-c:v", vcodec,
+            *vcodec_opts,
         ]
+
+        # CRF for CPU, -qp for NVENC
+        if vcodec == "h264_nvenc":
+            cmd += ["-qp", str(settings.video_reencode_crf)]
+        else:
+            cmd += ["-crf", str(settings.video_reencode_crf)]
+
         if has_audio:
             cmd += ["-c:a", "aac", "-b:a", "192k"]
             cmd += ["-map", "0:v:0", "-map", "1:a:0"]
+
         cmd += [str(output_path)]
 
-        completed = subprocess.run(cmd, check=False, capture_output=True, text=True, timeout=300)
+        # NVENC should finish in <60s; CPU gets 300s
+        timeout = 300
+        completed = subprocess.run(cmd, check=False, capture_output=True, text=True, timeout=timeout)
         if completed.returncode != 0:
             raise RuntimeError(f"Video compose failed: {completed.stderr[-1000:]}")
 
