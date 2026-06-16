@@ -314,7 +314,9 @@ def web_home() -> str:
       <input type="file" id="imageUpload" accept="image/*" style="display:none" onchange="uploadImage(event)" />
       <button id="imageBtn" onclick="document.getElementById('imageUpload').click()" style="width:auto;padding:10px 12px;margin-top:0" title="Upload background image">🖼️</button>
       <input type="file" id="musicUpload" accept="audio/*" style="display:none" onchange="uploadMusic(event)" />
-      <button id="musicBtn" onclick="document.getElementById('musicUpload').click()" style="width:auto;padding:10px 12px;margin-top:0;background:#10b98122;color:#34d399;border:1px solid #10b98155" title="Upload background music or SFX">🎵</button>
+      <button id="musicBtn" onclick="document.getElementById('musicUpload').click()" style="width:auto;padding:10px 12px;margin-top:0;background:#10b98122;color:#34d399;border:1px solid #10b98155" title="Upload background music">🎵 Music</button>
+      <input type="file" id="sfxUpload" accept="audio/*" style="display:none" onchange="uploadSFX(event)" />
+      <button id="sfxBtn" onclick="document.getElementById('sfxUpload').click()" style="width:auto;padding:10px 12px;margin-top:0;background:#f59e0b22;color:#fbbf24;border:1px solid #f59e0b55" title="Upload sound effect">🔊 SFX</button>
       <textarea id="msgInput" placeholder="Type your message..." rows="1" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendMessage()}"></textarea>
       <button id="sendBtn" onclick="sendMessage()">Send</button>
       <button id="audioBtn" onclick="submitQuickJob(false)" style="width:auto;background:#ef444422;color:#fca5a5;border:1px solid #ef444455" title="Generate audio from last AI message">🎙️ Audio</button>
@@ -534,6 +536,36 @@ def web_home() -> str:
 
       let uploadedImagePath = '';
       let uploadedMusicPath = '';
+
+      async function uploadSFX(event) {
+        const file = event.target.files[0];
+        if (!file) return;
+        if (!getToken()) { alert('Enter admin token first'); return; }
+        await ensureSession();
+
+        addBubble('user', `🔊 Uploading SFX: ${escapeHtml(file.name)}`);
+        addTyping('📤 Uploading sound effect...');
+
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('type', 'sfx');
+
+        try {
+          const resp = await fetch('/web/sfx-upload', {
+            method: 'POST',
+            headers: { 'x-admin-token': getToken() },
+            body: formData,
+          });
+          if (!resp.ok) throw new Error(await resp.text());
+          const data = await resp.json();
+          removeTyping();
+          addBubble('ai', `✅ SFX uploaded! "${data.keyword}" will match text like "${data.keyword}" in your stories.<br/><em>It will play at the right moment automatically.</em>`);
+        } catch (e) {
+          removeTyping();
+          addBubble('ai', '⚠️ Upload failed: ' + escapeHtml(e.message));
+        }
+        event.target.value = '';
+      }
 
       async function uploadMusic(event) {
         const file = event.target.files[0];
@@ -765,6 +797,30 @@ def list_voice_samples(x_admin_token: str | None = Header(default=None)) -> dict
     allowed_ext = {".wav", ".mp3", ".m4a", ".ogg", ".flac"}
     items = sorted(p.name for p in voices_dir.iterdir() if p.is_file() and p.suffix.lower() in allowed_ext)
     return {"items": items}
+
+
+@router.post("/sfx-upload")
+def upload_sfx(
+    file: UploadFile = File(...),
+    x_admin_token: str | None = Header(default=None),
+) -> dict:
+    _check_token(x_admin_token)
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="missing filename")
+    music_dir = Path("/app/data/music_cache")
+    music_dir.mkdir(parents=True, exist_ok=True)
+    safe_name = Path(file.filename).name
+    suffix = Path(safe_name).suffix.lower()
+    if suffix not in {".mp3", ".wav", ".m4a", ".ogg", ".flac"}:
+        raise HTTPException(status_code=400, detail="unsupported audio format")
+    # Extract keyword from filename
+    stem = Path(safe_name).stem.lower()
+    target = music_dir / safe_name
+    if target.exists():
+        target = music_dir / f"{stem}_{uuid4().hex[:4]}{suffix}"
+    target.write_bytes(file.file.read())
+    keyword = stem.split("_")[0].split("-")[0].split(" ")[0][:20]
+    return {"path": str(target), "filename": target.name, "keyword": keyword}
 
 
 @router.post("/music-upload")
