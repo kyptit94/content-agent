@@ -315,6 +315,8 @@ def web_home() -> str:
       <button id="imageBtn" onclick="document.getElementById('imageUpload').click()" style="width:auto;padding:10px 12px;margin-top:0" title="Upload background image">🖼️</button>
       <textarea id="msgInput" placeholder="Type your message..." rows="1" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendMessage()}"></textarea>
       <button id="sendBtn" onclick="sendMessage()">Send</button>
+      <button id="audioBtn" onclick="submitQuickJob(false)" style="width:auto;background:#ef444422;color:#fca5a5;border:1px solid #ef444455" title="Generate audio from last AI message">🎙️ Audio</button>
+      <button id="videoBtn" onclick="submitQuickJob(true)" style="width:auto" title="Generate video from last AI message">🎬 Video</button>
     </div>
 
     <!-- Jobs Modal -->
@@ -514,6 +516,37 @@ def web_home() -> str:
 
       let uploadedImagePath = '';
 
+      async function submitQuickJob(createVideo) {
+        if (!getToken()) { alert('Enter admin token first'); return; }
+        await ensureSession();
+        const sesh = await api('/web/chat/session/' + sessionId);
+        const msgs = sesh.messages || [];
+        // Find last assistant message with substantial content
+        let content = '';
+        for (let i = msgs.length - 1; i >= 0; i--) {
+          if (msgs[i].role === 'assistant' && msgs[i].content.length > 100) {
+            content = msgs[i].content;
+            break;
+          }
+        }
+        if (!content) { alert('No content generated yet. Chat with AI first!'); return; }
+        const title = content.split('.')[0].trim().slice(0, 120);
+        addBubble('user', createVideo ? '🎬 Create video from last content' : '🎙️ Create audio from last content');
+        addTyping();
+        try {
+          const data = await api('/web/quick-submit', {
+            method: 'POST',
+            headers: {'content-type': 'application/json'},
+            body: JSON.stringify({ session_id: sessionId, create_video: createVideo }),
+          });
+          removeTyping();
+          addBubble('ai', `🚀 Job submitted! <strong>ID: ${data.job_id}</strong><br/><a href="/web/jobs/${data.job_id}/audio?token=${encodeURIComponent(getToken())}" target="_blank">Download when ready</a>`);
+        } catch (e) {
+          removeTyping();
+          addBubble('ai', '⚠️ Error: ' + escapeHtml(e.message));
+        }
+      }
+
       async function uploadImage(event) {
         const file = event.target.files[0];
         if (!file) return;
@@ -562,6 +595,48 @@ def web_home() -> str:
 
 
 # === Chat API endpoints ===
+
+class QuickSubmitRequest(BaseModel):
+    session_id: str
+    create_video: bool = True
+
+
+@router.get("/chat/session/{session_id}")
+def get_chat_session(session_id: str, x_admin_token: str | None = Header(default=None)) -> dict:
+    _check_token(x_admin_token)
+    return chat.get_session(session_id)
+
+
+@router.post("/quick-submit")
+def quick_submit(body: QuickSubmitRequest, x_admin_token: str | None = Header(default=None)) -> dict:
+    _check_token(x_admin_token)
+    session = chat.get_session(body.session_id)
+    messages = session.get("messages", [])
+    content = ""
+    for msg in reversed(messages):
+        if msg["role"] == "assistant" and len(msg.get("content", "")) > 100:
+            content = msg["content"]
+            break
+    if not content:
+        raise HTTPException(status_code=400, detail="No content found. Chat with AI first!")
+    title = content.split(".")[0].strip()[:120]
+    job_id = str(uuid4())
+    payload = JobPayload(
+        job_id=job_id, created_at=datetime.utcnow().isoformat(),
+        mode="horror", title=title, content=content, language="en", tone="friendly",
+        use_gemini_refine=False, create_audio=True,
+        create_video=body.create_video,
+        video_source_type="internet",
+        kokoro_voice="af_heart",
+        notify_telegram=False,
+    )
+    queue.enqueue(payload.model_dump())
+    queue.set_job_status(job_id=job_id, payload={
+        "job_id": job_id, "status": "queued", "title": title, "mode": "horror",
+        "queued_at": datetime.utcnow().isoformat(), "payload": payload.model_dump(),
+    })
+    return {"job_id": job_id, "status": "queued"}
+
 
 @router.post("/chat/new")
 def chat_new_session(x_admin_token: str | None = Header(default=None)) -> dict:
