@@ -640,6 +640,35 @@ def list_voice_samples(x_admin_token: str | None = Header(default=None)) -> dict
     return {"items": items}
 
 
+@router.post("/image-upload")
+def upload_image(
+    file: UploadFile = File(...),
+    session_id: str = Header(default=""),
+    x_admin_token: str | None = Header(default=None),
+) -> dict:
+    _check_token(x_admin_token)
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="missing filename")
+    uploads_dir = Path("/app/data/uploads")
+    uploads_dir.mkdir(parents=True, exist_ok=True)
+    safe_name = Path(file.filename).name
+    suffix = Path(safe_name).suffix.lower()
+    if suffix not in {".jpg", ".jpeg", ".png", ".webp", ".bmp"}:
+        raise HTTPException(status_code=400, detail="unsupported image format")
+    # Read FormData session_id properly — may come as form field
+    target = uploads_dir / f"{uuid4().hex[:8]}_{safe_name}"
+    target.write_bytes(file.file.read())
+    path = str(target)
+    # Store in chat session state if session_id provided
+    if session_id:
+        session = chat.get_session(session_id)
+        state = session.get("state", {})
+        state["image_path"] = path
+        session["state"] = state
+        chat._save_session(session_id, session)
+    return {"path": path, "filename": target.name}
+
+
 @router.post("/voice-samples/upload")
 def upload_voice_sample(file: UploadFile = File(...), x_admin_token: str | None = Header(default=None)) -> dict:
     _check_token(x_admin_token)
