@@ -13,6 +13,7 @@ from app.services.subtitle_service import srt_to_ass
 from app.services.telegram_service import TelegramService
 from app.services.video_compose_service import VideoComposeService
 from app.services.voice_service import VoiceService
+from app.services.soundscape_service import SoundscapeService
 
 
 def main() -> None:
@@ -22,6 +23,7 @@ def main() -> None:
     voice = VoiceService()
     stock_video = StockVideoService()
     composer = VideoComposeService()
+    soundscape = SoundscapeService()
     social = SocialPublishService()
     telegram = TelegramService()
 
@@ -160,6 +162,18 @@ def main() -> None:
                         ) or None
                     except Exception:
                         subtitle_path = None
+
+                # === Add background music + sound effects ===
+                final_audio = audio_path
+                if audio_path and Path(audio_path).exists():
+                    set_running_status(stage="adding_soundscape", percent=50, detail="Adding music & sound effects")
+                    try:
+                        mixed = soundscape.process(job_id, content, audio_path)
+                        if mixed and mixed != audio_path:
+                            final_audio = mixed
+                            audio_path = mixed
+                    except Exception:
+                        pass
 
                 set_running_status(stage="composing_video", percent=75, detail="Rendering final video")
                 video_path = composer.compose(
