@@ -10,19 +10,14 @@ services:
     image: ollama/ollama:latest
     container_name: ai_agent_ollama
     restart: unless-stopped
+    runtime: nvidia
     environment:
       - OLLAMA_GPU_LAYERS=-1
+      - NVIDIA_VISIBLE_DEVICES=all
     ports:
       - "11434:11434"
     volumes:
       - ollama_data:/root/.ollama
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: cdi
-              capabilities: [gpu]
-              count: all
 
   api:
     build:
