@@ -10,7 +10,7 @@ class VideoComposeService:
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
     @staticmethod
-    def _detect_encoder() -> tuple[str, str]:
+    def _detect_encoder() -> tuple[str, list[str]]:
         """Returns (video_codec, extra_args) preferring NVENC GPU, falling back to CPU."""
         try:
             probe = subprocess.run(
@@ -112,9 +112,8 @@ class VideoComposeService:
 
         cmd += [str(output_path)]
 
-        # NVENC should finish in <60s; CPU gets 300s
-        timeout = 300
-        completed = subprocess.run(cmd, check=False, capture_output=True, text=True, timeout=timeout)
+        # No timeout — let it run until completion
+        completed = subprocess.run(cmd, check=False, capture_output=True, text=True)
         if completed.returncode != 0:
             raise RuntimeError(f"Video compose failed: {completed.stderr[-1000:]}")
 
