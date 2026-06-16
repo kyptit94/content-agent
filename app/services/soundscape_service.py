@@ -1,53 +1,94 @@
 """
-Auto background music & sound effects from Pixabay Music (free API) with ffmpeg fallback.
+Auto background music & sound effects mixed into TTS audio.
+Uses ffmpeg synthesis for ambient bed + text-triggered SFX.
 """
-import hashlib
+import logging
 import subprocess
 from pathlib import Path
 from typing import Optional
 
-import requests
-
 from app.config import settings
 
-_OUTPUT_DIR = Path("/app/data/outputs")
-_MUSIC_CACHE = Path("/app/data/music_cache")
+logger = logging.getLogger("soundscape")
 
-# Mood → Pixabay music search queries
-_MOOD_QUERIES: dict[str, str] = {
-    "horror": "dark+ambient+horror+cinematic",
-    "mystery": "mystery+suspense+cinematic",
-    "wealth": "corporate+motivational+uplifting",
-    "softskills": "inspirational+calm+ambient",
+_OUTPUT_DIR = Path("/app/data/outputs")
+
+# Mood → ffmpeg ambient synth (amplified for audibility)
+_MOOD_SYNTH: dict[str, str] = {
+    "horror": (
+        "anoisesrc=d=9999:c=brown:a=0.6,"
+        "aevalsrc='sin(35*2*PI*t)*0.3+sin(52*2*PI*t)*0.2+sin(70*2*PI*t)*0.15':d=9999:s=44100,"
+        "amix=inputs=2:duration=first,"
+        "volume=1.5,lowpass=f=400"
+    ),
+    "mystery": (
+        "aevalsrc='sin(90*2*PI*t)*0.25+sin(150*2*PI*t)*0.15+sin(220*2*PI*t)*0.10':d=9999:s=44100,"
+        "volume=1.5,lowpass=f=600,aecho=0.8:0.7:50:0.3"
+    ),
+    "wealth": (
+        "aevalsrc='sin(180*2*PI*t)*0.2+sin(260*2*PI*t)*0.12+sin(350*2*PI*t)*0.08':d=9999:s=44100,"
+        "volume=1.5,lowpass=f=600"
+    ),
+    "softskills": (
+        "aevalsrc='sin(150*2*PI*t)*0.15+sin(220*2*PI*t)*0.10+sin(300*2*PI*t)*0.06':d=9999:s=44100,"
+        "volume=1.5,lowpass=f=500"
+    ),
 }
 
-# Mood → Pixabay SFX search queries  
-_SFX_QUERIES: dict[str, list[str]] = {
-    "horror": ["creepy+atmosphere", "horror+stinger", "suspense+drone"],
-    "mystery": ["mystery+suspense", "eerie+pad"],
+# Text triggers → ffmpeg SFX synth
+_SFX_TRIGGERS: dict[str, str] = {
+    "door|creaked|creak": (
+        "aevalsrc='(1-abs(mod(t*3,2)-1))*0.6*exp(-t*8)':d=1.5:s=44100,lowpass=f=200,volume=1.5"
+    ),
+    "thunder|lightning|storm": (
+        "aevalsrc='random(0)*0.8*exp(-t*2)':d=3:s=44100,lowpass=f=150,volume=1.3"
+    ),
+    "heartbeat|heart": (
+        "aevalsrc='(1-abs(mod(t*1.5,2)-1))*0.4*exp(-t*0.3)':d=2:s=44100,lowpass=f=80,volume=1.3"
+    ),
+    "scream|shouted|yelled|shattered": (
+        "aevalsrc='sin(600*2*PI*t*(1+mod(t*5,2)*0.4))*0.3*exp(-t*3)':d=2:s=44100,volume=1.3"
+    ),
+    "footstep|footsteps|walked|ran|running|echoed": (
+        "aevalsrc='(1-abs(mod(t*2,1.5)-0.75))*0.15*exp(-t*15)':d=0.5:s=44100,lowpass=f=120,volume=1.5"
+    ),
+    "whisper|whispered": (
+        "anoisesrc=d=2:c=pink:a=0.2:s=44100,highpass=f=800,lowpass=f=3000,volume=1.5"
+    ),
+    "rain|raining|water|storm": (
+        "anoisesrc=d=4:c=white:a=0.3:s=44100,highpass=f=2000,lowpass=f=7000,volume=1.3"
+    ),
+    "fire|burned|flames": (
+        "anoisesrc=d=2:c=pink:a=0.25:s=44100,lowpass=f=350,volume=1.3"
+    ),
 }
 
 
 class SoundscapeService:
     def __init__(self) -> None:
         _OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-        _MUSIC_CACHE.mkdir(parents=True, exist_ok=True)
 
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
     def process(self, job_id: str, content: str, tts_path: str) -> str:
-        """Full pipeline: download music + SFX → mix with TTS."""
+        """Full pipeline: detect mood → synth ambient → detect SFX → mix all with TTS."""
         mood = self._detect_mood(content)
         duration = self._get_audio_duration(tts_path)
+        logger.info(f"[{job_id}] Soundscape: mood={mood}, duration={duration:.1f}s")
 
-        # Try Pixabay music first, fall back to synth
-        music_path = self._download_music(mood) or self._generate_synth_ambient(job_id, mood, duration)
+        # Generate ambient background
+        ambient_path = self._generate_ambient(job_id, mood, duration)
+        logger.info(f"[{job_id}] Ambient: {ambient_path or 'FAILED'}")
 
-        # Try Pixabay SFX
-        sfx_files = self._download_sfx(mood, job_id)
+        # Generate SFX from text triggers
+        sfx_files = self._generate_sfx(job_id, content)
+        logger.info(f"[{job_id}] SFX: {len(sfx_files)} files")
 
-        return self._mix(job_id, tts_path, music_path, sfx_files, duration)
+        # Mix everything together
+        result = self._mix(job_id, tts_path, ambient_path, sfx_files, duration)
+        logger.info(f"[{job_id}] Mix result: {result}")
+        return result
 
     # ------------------------------------------------------------------
     # Mood detection
@@ -81,136 +122,104 @@ class SoundscapeService:
         return max(scores, key=scores.get)
 
     # ------------------------------------------------------------------
-    # Pixabay Music API
+    # ffmpeg synthesis
     # ------------------------------------------------------------------
-    def _download_music(self, mood: str) -> Optional[str]:
-        """Download free background music from Pixabay Music API."""
-        key = getattr(settings, "pixabay_api_key", None)
-        if not key:
-            return None
-
-        query = _MOOD_QUERIES.get(mood, "cinematic+ambient")
-        cache_key = f"{mood}_{hashlib.md5(query.encode()).hexdigest()[:8]}"
-        cached = _MUSIC_CACHE / f"{cache_key}.mp3"
-        if cached.exists() and cached.stat().st_size > 1000:
-            return str(cached)
-
-        try:
-            resp = requests.get(
-                "https://pixabay.com/api/music/",
-                params={"key": key, "q": query, "per_page": 3},
-                timeout=10,
-            )
-            hits = resp.json().get("hits", [])
-            if not hits:
-                return None
-
-            # Pick the shortest track (free previews are ~30s)
-            track = min(hits, key=lambda h: h.get("duration", 999))
-            preview_url = track.get("preview_url") or track.get("audio")
-            if not preview_url:
-                return None
-
-            audio_data = requests.get(preview_url, timeout=30).content
-            cached.write_bytes(audio_data)
-            return str(cached) if cached.stat().st_size > 1000 else None
-        except Exception:
-            return None
-
-    def _download_sfx(self, mood: str, job_id: str) -> list[str]:
-        """Download SFX from Pixabay SFX API. Returns list of file paths."""
-        key = getattr(settings, "pixabay_api_key", None)
-        if not key:
-            return []
-
-        queries = _SFX_QUERIES.get(mood, ["suspense+stinger"])
-        sfx_files = []
-        for q in queries[:2]:  # Max 2 queries
-            try:
-                resp = requests.get(
-                    "https://pixabay.com/api/sfx/",
-                    params={"key": key, "q": q, "per_page": 2},
-                    timeout=10,
-                )
-                hits = resp.json().get("hits", [])
-                for hit in hits[:2]:
-                    url = hit.get("preview_url") or hit.get("audio")
-                    if not url:
-                        continue
-                    fpath = _OUTPUT_DIR / f"{job_id}_sfx_{len(sfx_files)}.mp3"
-                    fpath.write_bytes(requests.get(url, timeout=20).content)
-                    if fpath.stat().st_size > 500:
-                        sfx_files.append(str(fpath))
-            except Exception:
-                pass
-        return sfx_files
-
-    # ------------------------------------------------------------------
-    # ffmpeg synthesis (fallback)
-    # ------------------------------------------------------------------
-    def _generate_synth_ambient(self, job_id: str, mood: str, duration: float) -> str:
-        synth_map = {
-            "horror": (
-                "anoisesrc=d=9999:c=brown:a=0.35,"
-                "aevalsrc='sin(35*2*PI*t)*0.15+sin(50*2*PI*t)*0.10':d=9999,"
-                "amix=inputs=2:duration=first,lowpass=f=300"
-            ),
-            "mystery": (
-                "aevalsrc='sin(100*2*PI*t)*0.10+sin(160*2*PI*t)*0.06':d=9999:s=44100,"
-                "aecho=0.8:0.7:60:0.3,lowpass=f=500"
-            ),
-            "wealth": (
-                "aevalsrc='sin(200*2*PI*t)*0.08+sin(300*2*PI*t)*0.05':d=9999:s=44100,lowpass=f=500"
-            ),
-            "softskills": (
-                "aevalsrc='sin(150*2*PI*t)*0.06+sin(220*2*PI*t)*0.04':d=9999:s=44100,lowpass=f=400"
-            ),
-        }
-        synth = synth_map.get(mood, synth_map["mystery"])
+    def _generate_ambient(self, job_id: str, mood: str, duration: float) -> Optional[str]:
+        """Generate ambient background audio for given mood and duration."""
+        synth = _MOOD_SYNTH.get(mood, _MOOD_SYNTH["mystery"])
         output = str(_OUTPUT_DIR / f"{job_id}_ambient.mp3")
-        cmd = ["ffmpeg", "-y", "-f", "lavfi", "-i", synth, "-t", str(duration), "-c:a", "libmp3lame", "-b:a", "64k", output]
-        subprocess.run(cmd, check=False, capture_output=True, timeout=30)
-        return output if Path(output).exists() else ""
+
+        cmd = [
+            "ffmpeg", "-y", "-f", "lavfi",
+            "-i", synth,
+            "-t", str(duration),
+            "-c:a", "libmp3lame", "-b:a", "96k",
+            output,
+        ]
+        try:
+            result = subprocess.run(cmd, check=False, capture_output=True, text=True, timeout=30)
+            if result.returncode != 0:
+                logger.error(f"[{job_id}] Ambient synth failed: {result.stderr[-300:]}")
+            if Path(output).exists() and Path(output).stat().st_size > 500:
+                return output
+        except Exception as e:
+            logger.error(f"[{job_id}] Ambient exception: {e}")
+        return None
+
+    def _generate_sfx(self, job_id: str, content: str) -> list[str]:
+        """Generate individual sound effect files from text triggers."""
+        import re
+        lower = content.lower()
+        sfx_files = []
+        for i, (pattern, synth) in enumerate(_SFX_TRIGGERS.items()):
+            if i >= 4:  # Max 4 SFX
+                break
+            if not re.search(pattern, lower):
+                continue
+            output = str(_OUTPUT_DIR / f"{job_id}_sfx_{i}.mp3")
+            cmd = [
+                "ffmpeg", "-y", "-f", "lavfi",
+                "-i", synth,
+                "-t", "3",
+                "-c:a", "libmp3lame", "-b:a", "64k",
+                output,
+            ]
+            try:
+                result = subprocess.run(cmd, check=False, capture_output=True, text=True, timeout=10)
+                if result.returncode == 0 and Path(output).exists() and Path(output).stat().st_size > 300:
+                    sfx_files.append(output)
+                    logger.info(f"[{job_id}] SFX generated: {pattern}")
+            except Exception as e:
+                logger.error(f"[{job_id}] SFX error: {e}")
+        return sfx_files
 
     # ------------------------------------------------------------------
     # Mixing
     # ------------------------------------------------------------------
-    def _mix(self, job_id: str, tts_path: str, music_path: Optional[str], sfx_files: list[str], duration: float) -> str:
+    def _mix(self, job_id: str, tts_path: str, ambient_path: Optional[str], sfx_files: list[str], duration: float) -> str:
         output = str(_OUTPUT_DIR / f"{job_id}_final.mp3")
         inputs = ["ffmpeg", "-y"]
         count = 0
 
         inputs += ["-i", tts_path]
-        idx_tts = count; count += 1
+        idx_tts = count
+        count += 1
 
-        idx_music = -1
-        if music_path and Path(music_path).exists():
-            inputs += ["-stream_loop", "-1", "-i", music_path]
-            idx_music = count; count += 1
+        idx_ambient = -1
+        if ambient_path and Path(ambient_path).exists():
+            inputs += ["-stream_loop", "-1", "-i", str(ambient_path)]
+            idx_ambient = count
+            count += 1
 
         sfx_indices = []
         for sfx in sfx_files:
             if Path(sfx).exists():
-                inputs += ["-i", sfx]
+                inputs += ["-i", str(sfx)]
                 sfx_indices.append(count)
                 count += 1
 
         if count == 1:
-            # No music/SFX — just copy TTS
-            subprocess.run(["ffmpeg", "-y", "-i", tts_path, "-c:a", "libmp3lame", "-b:a", "128k", output], check=False, capture_output=True, timeout=30)
+            # No ambient/SFX — just copy TTS
+            logger.info(f"[{job_id}] Mix: TTS only (no ambient/SFX)")
+            cmd = inputs + ["-c:a", "libmp3lame", "-b:a", "128k", output]
+            subprocess.run(cmd, check=False, capture_output=True, text=True, timeout=30)
             return output if Path(output).exists() else tts_path
 
-        # Build filter: TTS + music(0.5) + SFX(0.3 each) → normalize
-        weights = "1"  # TTS
-        inputs_str = f"[{idx_tts}:a]"
-        if idx_music >= 0:
-            weights += " 0.5"
-            inputs_str += f"[{idx_music}:a]"
-        for _ in sfx_indices:
-            weights += " 0.3"
-            inputs_str += f"[{_}:a]"
+        # Build filter: TTS (weight 1) + ambient (weight 0.8) + SFX (weight 0.6 each)
+        weights = "1"
+        input_labels = [f"[{idx_tts}:a]"]
+        if idx_ambient >= 0:
+            weights += " 0.8"
+            input_labels.append(f"[{idx_ambient}:a]")
+        for idx in sfx_indices:
+            weights += " 0.6"
+            input_labels.append(f"[{idx}:a]")
 
-        filter_complex = f"{inputs_str}amix=inputs={count}:duration=first:weights={weights}[a];[a]volume=1.2[aout]"
+        filter_complex = (
+            f"{''.join(input_labels)}"
+            f"amix=inputs={count}:duration=first:weights={weights}"
+            f"[a];[a]volume=1.3[aout]"
+        )
         cmd = inputs + [
             "-filter_complex", filter_complex,
             "-map", "[aout]",
@@ -218,7 +227,17 @@ class SoundscapeService:
             "-t", str(duration),
             output,
         ]
-        subprocess.run(cmd, check=False, capture_output=True, timeout=60)
+
+        logger.info(f"[{job_id}] Mix: {count} tracks, weights={weights}")
+        try:
+            result = subprocess.run(cmd, check=False, capture_output=True, text=True, timeout=60)
+            if result.returncode != 0:
+                logger.error(f"[{job_id}] Mix failed: {result.stderr[-300:]}")
+                return tts_path
+        except Exception as e:
+            logger.error(f"[{job_id}] Mix exception: {e}")
+            return tts_path
+
         return output if Path(output).exists() else tts_path
 
     @staticmethod
