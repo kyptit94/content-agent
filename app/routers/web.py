@@ -369,14 +369,18 @@ def web_home() -> str:
         wrap.scrollTop = wrap.scrollHeight;
       }
 
-      function addTyping() {
+      function addTyping(text) {
         const wrap = document.getElementById('chatWrap');
         const el = document.createElement('div');
         el.className = 'typing';
         el.id = 'typingIndicator';
-        el.innerText = 'Creator AI is thinking';
+        el.innerText = text || '🤔 Thinking...';
         wrap.appendChild(el);
         wrap.scrollTop = wrap.scrollHeight;
+      }
+      function updateTyping(text) {
+        const el = document.getElementById('typingIndicator');
+        if (el) el.innerText = text;
       }
       function removeTyping() {
         const el = document.getElementById('typingIndicator');
@@ -451,7 +455,13 @@ def web_home() -> str:
         input.style.height = 'auto';
         document.getElementById('sendBtn').disabled = true;
         addBubble('user', escapeHtml(msg));
-        addTyping();
+        addTyping('🤔 Analyzing...');
+        const statuses = ['📝 Writing content...', '🎨 Polishing...', '✨ Almost done...'];
+        let si = 0;
+        const statusInterval = setInterval(() => {
+          updateTyping(statuses[si % statuses.length]);
+          si++;
+        }, 1200);
 
         try {
           const data = await api('/web/chat', {
@@ -459,10 +469,12 @@ def web_home() -> str:
             headers: {'content-type': 'application/json'},
             body: JSON.stringify({ session_id: sessionId, message: msg }),
           });
+          clearInterval(statusInterval);
           removeTyping();
           addBubble('ai', escapeHtml(data.message || '(no response)'));
           if (data.action_results) renderActionResults(data.action_results);
         } catch (e) {
+          clearInterval(statusInterval);
           removeTyping();
           addBubble('ai', '⚠️ Error: ' + escapeHtml(e.message));
         }
@@ -472,7 +484,7 @@ def web_home() -> str:
 
       window.pickOption = async function(idx) {
         addBubble('user', `Pick option ${idx+1}`);
-        addTyping();
+        addTyping('✅ Selecting option...');
         try {
           await ensureSession();
           const data = await api('/web/chat', {
@@ -535,8 +547,8 @@ def web_home() -> str:
         }
         if (!content) { alert('No content generated yet. Chat with AI first!'); return; }
         const title = content.split('.')[0].trim().slice(0, 120);
-        addBubble('user', createVideo ? '🎬 Create video from last content' : '🎙️ Create audio from last content');
-        addTyping();
+        addBubble('user', createVideo ? '🎬 Create video' : '🎙️ Create audio');
+        addTyping('🚀 Submitting job...');
         try {
           const data = await api('/web/quick-submit', {
             method: 'POST',
