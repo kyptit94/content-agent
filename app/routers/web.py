@@ -421,11 +421,14 @@ def web_home() -> str:
         const statusLabels = {queued:'Queued', running:'Running', completed:'Completed', failed:'Failed'};
         const html = jobs.map(j => {
           const s = j.status || 'unknown';
+          const hasAudio = j.outputs && j.outputs.audio_path;
+          const audioPlayer = hasAudio ? `<div style="margin-top:6px"><audio controls preload="metadata" style="width:100%;max-width:400px;height:36px" src="/web/jobs/${escapeHtml(j.job_id||'')}/audio?token=${encodeURIComponent(getToken())}"></audio></div>` : '';
           return `<div class="job-card">
             <span class="j-title">${escapeHtml(j.title||j.topic||'Untitled')}</span>
             <span class="badge ${s}">${statusLabels[s]||s}</span>
             <div class="j-meta">ID: ${escapeHtml(j.job_id||'')} · Mode: ${escapeHtml(j.mode||'')}</div>
             ${j.error ? '<div style="color:var(--red);font-size:11px;margin-top:2px">'+escapeHtml(j.error.slice(0,200))+'</div>' : ''}
+            ${audioPlayer}
           </div>`;
         }).join('');
         const div = document.createElement('div');
@@ -500,10 +503,11 @@ def web_home() -> str:
             const s = j.status||'unknown';
             return `<div class="job-card">
               <span class="j-title">${escapeHtml(j.title||j.topic||'Untitled')}</span><span class="badge ${s}">${labels[s]||s}</span>
-              <div class="j-meta">ID: ${escapeHtml(j.job_id||'')} · Mode: ${escapeHtml(j.mode||'')}</div>
-              ${j.error ? '<div style="color:var(--red);font-size:11px;margin-top:2px">'+escapeHtml(j.error.slice(0,300))+'</div>' : ''}
-              ${j.progress_percent ? '<div style="margin-top:4px"><div style="height:4px;background:var(--line);border-radius:2px"><div style="height:100%;width:'+j.progress_percent+'%;background:var(--accent);border-radius:2px"></div></div></div>' : ''}
-            </div>`;
+            <div class="j-meta">ID: ${escapeHtml(j.job_id||'')} · Mode: ${escapeHtml(j.mode||'')}</div>
+            ${j.error ? '<div style="color:var(--red);font-size:11px;margin-top:2px">'+escapeHtml(j.error.slice(0,300))+'</div>' : ''}
+            ${j.progress_percent ? '<div style="margin-top:4px"><div style="height:4px;background:var(--line);border-radius:2px"><div style="height:100%;width:'+j.progress_percent+'%;background:var(--accent);border-radius:2px"></div></div></div>' : ''}
+            ${j.outputs && j.outputs.audio_path ? '<div style="margin-top:6px"><audio controls preload="metadata" style="width:100%;max-width:400px;height:36px" src="/web/jobs/'+escapeHtml(j.job_id||'')+'/audio?token='+encodeURIComponent(getToken())+'"></audio></div>' : ''}
+          </div>`;
           }).join('');
         } catch (e) { container.innerHTML = '<div style="color:var(--red)">Error loading jobs.</div>'; }
       }
