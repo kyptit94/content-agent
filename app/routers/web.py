@@ -628,7 +628,8 @@ def quick_submit(body: QuickSubmitRequest, x_admin_token: str | None = Header(de
         create_video=body.create_video,
         video_source_type="internet",
         kokoro_voice="af_heart",
-        notify_telegram=False,
+        notify_telegram=True,
+        telegram_chat_id=settings.telegram_chat_id,
     )
     queue.enqueue(payload.model_dump())
     queue.set_job_status(job_id=job_id, payload={

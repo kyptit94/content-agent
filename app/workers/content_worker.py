@@ -72,6 +72,13 @@ def main() -> None:
             audio_error = ""
             audio_duration_sec = None
 
+            # === Notify Telegram on start ===
+            if notify_telegram and notify_chat_id and telegram.enabled:
+                telegram.send_to_chat(
+                    chat_id=notify_chat_id,
+                    text=f"🚀 Job started: [{job_id}] {title}\nMode: {mode}",
+                )
+
             # === Save pre-generated content to markdown ===
             set_running_status(stage="saving_content", percent=10, detail="Saving selected script")
             if not content:
