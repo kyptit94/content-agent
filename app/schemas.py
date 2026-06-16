@@ -65,6 +65,7 @@ class JobRequest(BaseModel):
     video_source_type: str = Field(default="self", description="self, internet, or image")
     user_video_path: str | None = Field(default=None)
     user_image_path: str | None = Field(default=None)
+    user_music_path: str | None = Field(default=None)
     voice_sample_filename: str | None = Field(default=None)
     edge_tts_voice: str | None = Field(default=None)
     kokoro_voice: str | None = Field(default="af_heart")

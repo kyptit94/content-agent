@@ -72,6 +72,7 @@ def main() -> None:
         video_keyword = payload.get("video_keyword") or title
         user_video_path = payload.get("user_video_path")
         user_image_path = payload.get("user_image_path")
+        user_music_path = payload.get("user_music_path")
         notify_telegram = bool(payload.get("notify_telegram", False))
         notify_chat_id = payload.get("telegram_chat_id") or settings.telegram_chat_id
 
@@ -149,7 +150,7 @@ def main() -> None:
                 if audio_path and Path(audio_path).exists():
                     set_running_status(stage="adding_soundscape", percent=50, detail="Adding music & sound effects")
                     try:
-                        mixed = soundscape.process(job_id, content, audio_path)
+                        mixed = soundscape.process(job_id, content, audio_path, user_music=user_music_path)
                         if mixed and mixed != audio_path:
                             audio_path = mixed
                     except Exception:
