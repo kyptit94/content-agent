@@ -319,6 +319,13 @@ def web_home() -> str:
       <button id="sfxBtn" onclick="document.getElementById('sfxUpload').click()" style="width:auto;padding:10px 12px;margin-top:0;background:#f59e0b22;color:#fbbf24;border:1px solid #f59e0b55" title="Upload sound effect">🔊 SFX</button>
       <textarea id="msgInput" placeholder="Type your message..." rows="1" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendMessage()}"></textarea>
       <button id="sendBtn" onclick="sendMessage()">Send</button>
+      <select id="voiceSelect" onchange="setVoice(this.value)" style="width:auto;padding:10px 8px;margin-top:0;background:var(--bg);border:1px solid var(--line);color:var(--text);font-size:12px;border-radius:12px" title="Choose TTS voice">
+        <option value="am_adam">🚹 Adam (deep male)</option>
+        <option value="am_michael">🚹 Michael (calm male)</option>
+        <option value="af_heart">🚺 Heart (warm female)</option>
+        <option value="af_bella">🚺 Bella (soft female)</option>
+        <option value="af_nicole">🚺 Nicole (clear female)</option>
+      </select>
       <button id="audioBtn" onclick="submitQuickJob(false)" style="width:auto;background:#ef444422;color:#fca5a5;border:1px solid #ef444455" title="Generate audio from last AI message">🎙️ Audio</button>
       <button id="videoBtn" onclick="submitQuickJob(true)" style="width:auto" title="Generate video from last AI message">🎬 Video</button>
     </div>
@@ -536,6 +543,53 @@ def web_home() -> str:
 
       let uploadedImagePath = '';
       let uploadedMusicPath = '';
+      let currentVoice = 'am_adam';
+
+      function setVoice(voice) {
+        currentVoice = voice;
+        localStorage.setItem('ttsVoice', voice);
+      }
+
+      // Load saved voice preference
+      currentVoice = localStorage.getItem('ttsVoice') || 'am_adam';
+      document.getElementById('voiceSelect').value = currentVoice;
+      setVoice(currentVoice);
+
+      async function submitQuickJob(createVideo) {
+        if (!getToken()) { alert('Enter admin token first'); return; }
+        await ensureSession();
+        const sesh = await api('/web/chat/session/' + sessionId);
+        const msgs = sesh.messages || [];
+        let content = '';
+        for (let i = msgs.length - 1; i >= 0; i--) {
+          if (msgs[i].role === 'assistant' && msgs[i].content.length > 100) {
+            content = msgs[i].content;
+            break;
+          }
+        }
+        if (!content) { alert('No content generated yet. Chat with AI first!'); return; }
+        const title = content.split('.')[0].trim().slice(0, 120);
+        addBubble('user', createVideo ? '🎬 Create video' : '🎙️ Create audio');
+        addTyping('🚀 Submitting job...');
+        try {
+          // Save voice preference to session state
+          await api('/web/chat/set-voice', {
+            method: 'POST',
+            headers: {'content-type': 'application/json'},
+            body: JSON.stringify({ session_id: sessionId, voice: currentVoice }),
+          });
+          const data = await api('/web/quick-submit', {
+            method: 'POST',
+            headers: {'content-type': 'application/json'},
+            body: JSON.stringify({ session_id: sessionId, create_video: createVideo }),
+          });
+          removeTyping();
+          addBubble('ai', `🚀 Job submitted! <strong>ID: ${data.job_id}</strong><br/><a href="/web/jobs/${data.job_id}/audio?token=${encodeURIComponent(getToken())}" target="_blank">Download when ready</a>`);
+        } catch (e) {
+          removeTyping();
+          addBubble('ai', '⚠️ Error: ' + escapeHtml(e.message));
+        }
+      }
 
       async function uploadSFX(event) {
         const file = event.target.files[0];
@@ -709,7 +763,7 @@ def quick_submit(body: QuickSubmitRequest, x_admin_token: str | None = Header(de
         use_gemini_refine=False, create_audio=True,
         create_video=body.create_video,
         video_source_type="internet",
-        kokoro_voice="af_heart",
+        kokoro_voice=session.get("state", {}).get("voice", "am_adam"),
         user_music_path=session.get("state", {}).get("music_path"),
         notify_telegram=True,
         telegram_chat_id=settings.telegram_chat_id,
