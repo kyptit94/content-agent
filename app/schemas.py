@@ -56,14 +56,15 @@ class AudioVideoOptions(BaseModel):
 class JobRequest(BaseModel):
     mode: ContentMode
     title: str = Field(min_length=3, max_length=500)
-    content: str = Field(min_length=50, max_length=10000)
+    content: str = Field(min_length=50, max_length=200000)
     language: str = Field(default="en")
     tone: str = Field(default="friendly")
     use_gemini_refine: bool = Field(default=False)
     create_audio: bool = Field(default=True)
     create_video: bool = Field(default=False)
-    video_source_type: str = Field(default="self", description="self or internet")
+    video_source_type: str = Field(default="self", description="self, internet, or image")
     user_video_path: str | None = Field(default=None)
+    user_image_path: str | None = Field(default=None)
     voice_sample_filename: str | None = Field(default=None)
     edge_tts_voice: str | None = Field(default=None)
     kokoro_voice: str | None = Field(default="af_heart")

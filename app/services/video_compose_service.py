@@ -36,10 +36,7 @@ class VideoComposeService:
         subtitle_path: str | None = None,
         audio_duration_sec: float | None = None,
     ) -> str:
-        source = Path(source_video_path)
-        if not source.exists():
-            raise RuntimeError(f"Source video not found: {source_video_path}")
-
+        is_image = source.suffix.lower() in {'.jpg', '.jpeg', '.png', '.webp', '.bmp'}
         has_audio = bool(audio_path and Path(audio_path).exists())
         has_sub = bool(subtitle_path and Path(subtitle_path).exists())
 
@@ -62,17 +59,26 @@ class VideoComposeService:
         else:
             duration_sec = audio_duration_sec or 30.0
 
-        duration_sec = max(10.0, min(duration_sec, 60.0))
+        # No upper limit — supports 1-hour+ content
+        duration_sec = max(10.0, duration_sec)
 
-        # Detect best encoder (GPU NVENC or CPU libx264)
+        # Detect best encoder
         vcodec, vcodec_opts = self._detect_encoder()
 
-        # Build video filter chain (NO zoompan — it's a CPU bottleneck)
-        vf_parts = [
-            "scale=1080:1920:force_original_aspect_ratio=increase",
-            "crop=1080:1920",
-            "fps=30",
-        ]
+        # Build video filter chain
+        if is_image:
+            # Image → use slow Ken Burns zoom for static image background
+            vf_parts = [
+                "scale=1080:1920:force_original_aspect_ratio=increase",
+                "crop=1080:1920",
+                "zoompan=z='min(zoom+0.00015,1.04)':d=1:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=1080x1920:fps=30",
+            ]
+        else:
+            vf_parts = [
+                "scale=1080:1920:force_original_aspect_ratio=increase",
+                "crop=1080:1920",
+                "fps=30",
+            ]
         if overlay_text:
             vf_parts.append(
                 "drawtext=text='{}':x=(w-text_w)/2:y=h-170:"
@@ -84,12 +90,12 @@ class VideoComposeService:
 
         vf = ",".join(vf_parts)
 
-        cmd = [
-            "ffmpeg", "-y",
-            "-hwaccel", "auto",
-            "-stream_loop", "-1",
-            "-i", str(source),
-        ]
+        cmd = ["ffmpeg", "-y", "-hwaccel", "auto"]
+        if is_image:
+            # For images, loop the single frame
+            cmd += ["-loop", "1", "-i", str(source)]
+        else:
+            cmd += ["-stream_loop", "-1", "-i", str(source)]
         if has_audio:
             cmd += ["-i", audio_path]
 
@@ -100,7 +106,6 @@ class VideoComposeService:
             *vcodec_opts,
         ]
 
-        # CRF for CPU, -qp for NVENC
         if vcodec == "h264_nvenc":
             cmd += ["-qp", str(settings.video_reencode_crf)]
         else:
@@ -112,7 +117,7 @@ class VideoComposeService:
 
         cmd += [str(output_path)]
 
-        # No timeout — let it run until completion
+        # No timeout — supports very long videos
         completed = subprocess.run(cmd, check=False, capture_output=True, text=True)
         if completed.returncode != 0:
             raise RuntimeError(f"Video compose failed: {completed.stderr[-1000:]}")

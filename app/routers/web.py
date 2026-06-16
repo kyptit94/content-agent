@@ -315,6 +315,8 @@ def web_home() -> str:
     </div>
 
     <div class="input-bar">
+      <input type="file" id="imageUpload" accept="image/*" style="display:none" onchange="uploadImage(event)" />
+      <button id="imageBtn" onclick="document.getElementById('imageUpload').click()" style="width:auto;padding:10px 12px;margin-top:0" title="Upload background image">🖼️</button>
       <textarea id="msgInput" placeholder="Type your message..." rows="1" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendMessage()}"></textarea>
       <button id="sendBtn" onclick="sendMessage()">Send</button>
     </div>
@@ -512,6 +514,39 @@ def web_home() -> str:
         if (!sessionId) return alert('No active session');
         const token = getToken();
         window.open('/web/chat/export?session_id=' + sessionId + '&token=' + encodeURIComponent(token), '_blank');
+      }
+
+      let uploadedImagePath = '';
+
+      async function uploadImage(event) {
+        const file = event.target.files[0];
+        if (!file) return;
+        if (!getToken()) { alert('Enter admin token first'); return; }
+        await ensureSession();
+
+        addBubble('user', `🖼️ Uploading: ${escapeHtml(file.name)}`);
+        addTyping();
+
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('session_id', sessionId);
+
+        try {
+          const resp = await fetch('/web/image-upload', {
+            method: 'POST',
+            headers: { 'x-admin-token': getToken() },
+            body: formData,
+          });
+          if (!resp.ok) throw new Error(await resp.text());
+          const data = await resp.json();
+          uploadedImagePath = data.path;
+          removeTyping();
+          addBubble('ai', `✅ Image uploaded! It will be used as background for your next video.<br/><em>Now you can submit your video.</em>`);
+        } catch (e) {
+          removeTyping();
+          addBubble('ai', '⚠️ Upload failed: ' + escapeHtml(e.message));
+        }
+        event.target.value = '';
       }
 
       // Auto-resize textarea

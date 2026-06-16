@@ -35,7 +35,6 @@ def main() -> None:
             continue
 
         mode = payload.get("mode", "horror")
-        # Use pre-generated title + content (Step 2: user already selected)
         title = payload.get("title", payload.get("topic", ""))
         content = payload.get("content", "")
         language = payload.get("language", "en")
@@ -46,6 +45,7 @@ def main() -> None:
         video_source_type = payload.get("video_source_type", "internet")
         video_keyword = payload.get("video_keyword") or title
         user_video_path = payload.get("user_video_path")
+        user_image_path = payload.get("user_image_path")
         notify_telegram = bool(payload.get("notify_telegram", False))
         notify_chat_id = payload.get("telegram_chat_id") or settings.telegram_chat_id
 
@@ -81,7 +81,8 @@ def main() -> None:
             # === Generate audio ===
             if create_audio:
                 set_running_status(stage="generating_audio", percent=35, detail="Creating voiceover")
-                tts_text = content[:5000]
+                # No truncation — supports long stories (1 hour+)
+                tts_text = content
                 is_english = language.lower().startswith("en")
                 kokoro_voice = payload.get("kokoro_voice") or "af_heart"
 
@@ -115,10 +116,13 @@ def main() -> None:
             video_path = ""
             video_source = ""
             if create_video:
-                set_running_status(stage="preparing_video", percent=55, detail="Fetching stock footage")
+                set_running_status(stage="preparing_video", percent=55, detail="Preparing video source")
                 source_path = ""
-                if video_source_type == "internet":
-                    # AI extracts visual keywords from content for diverse clips
+                if user_image_path and Path(user_image_path).exists():
+                    # User uploaded an image as background
+                    source_path = user_image_path
+                    video_source = "web-upload-user-image"
+                elif video_source_type == "internet":
                     keywords = llm.extract_video_keywords(content, language)
                     clip_paths = stock_video.fetch_multiple(
                         keywords=keywords,
@@ -132,7 +136,7 @@ def main() -> None:
                 else:
                     if not user_video_path or not Path(user_video_path).exists():
                         raise RuntimeError(
-                            "video_source_type=self but user video is missing. Upload video first or choose internet"
+                            "video_source_type=self but user video is missing. Upload video/image first or choose internet"
                         )
                     source_path = user_video_path
                     video_source = "web-upload-user-video"

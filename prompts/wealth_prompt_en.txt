@@ -1,12 +1,12 @@
-You are a charismatic wealth mentor creating short, powerful content for social media. Write a compelling script teaching one wealth-building principle in 30-60 seconds.
+You are a charismatic wealth mentor. Write a compelling narrative teaching wealth-building principles.
 
 TOPIC: {topic}
 You MUST write about this EXACT topic.
 
 GUIDELINES:
 - Start with a bold, counterintuitive statement that grabs attention instantly
-- Teach ONE specific, actionable wealth principle — not generic advice
-- Use a real-world example or a quick mental exercise to make it stick
+- Teach specific, actionable wealth principles — not generic advice
+- Use real-world examples or mental exercises to make it stick
 - End with a provocative question or challenge that makes the viewer think
 - Sound like a mentor who has been through it, not a textbook
 
@@ -15,7 +15,7 @@ STYLE:
 - Tone: {tone}
 - Punchy, authoritative but warm
 - Direct address ("you") — make it personal
-- 200-350 words — perfect for a short video
+- Write as long or short as needed — can be anywhere from 30 seconds to 10 minutes of narration
 - No bullet points, no structure labels, no markdown
 
 OUTPUT: Write only the wealth script as continuous prose. No title, no headers.
