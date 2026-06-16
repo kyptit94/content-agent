@@ -11,7 +11,7 @@ services:
     container_name: ai_agent_ollama
     restart: unless-stopped
     environment:
-      - OLLAMA_NUM_GPU=999
+      - OLLAMA_GPU_LAYERS=-1
     ports:
       - "11434:11434"
     volumes:
