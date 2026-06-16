@@ -4,6 +4,8 @@ from datetime import datetime
 from pathlib import Path
 from uuid import uuid4
 
+import requests
+
 from redis import Redis
 
 from app.config import settings
@@ -20,6 +22,7 @@ class ChatService:
         self.llm = llm
         self.queue = queue
         self._system_prompt = (_PROMPT_DIR / "chat_system.txt").read_text(encoding="utf-8")
+        self._ollama_url = settings.ollama_base_url.rstrip("/")
 
     # ------------------------------------------------------------------
     # Public API
@@ -34,9 +37,8 @@ class ChatService:
         context = self._build_context(session)
         system = self._system_prompt.replace("{context}", context)
 
-        # Call LLM
-        llm_prompt = self._build_llm_prompt(system, session["messages"])
-        raw_response = self._call_llm(llm_prompt)
+        # Call LLM using Chat API (prevents token repetition from text completion)
+        raw_response = self._call_chat(system, session["messages"])
 
         # Parse actions from response
         clean_text, actions = self._parse_actions(raw_response)
@@ -47,7 +49,7 @@ class ChatService:
             result = self._execute_action(session, action_type, action_arg)
             action_results.append(result)
 
-        # Save assistant message
+        # Save assistant message (store raw for context, but strip actions)
         session["messages"].append({
             "role": "assistant",
             "content": clean_text,
@@ -117,29 +119,88 @@ class ChatService:
         if state.get("job_id"):
             parts.append(f"Last submitted job: {state['job_id']}")
         if not parts:
-            parts.append("No state yet — start by asking user which content mode they want.")
+            parts.append("No state yet. Start a natural conversation with the user.")
         return "\n".join(parts)
 
+    def _call_chat(self, system: str, messages: list) -> str:
+        """Call Ollama Chat API - much cleaner than text completion for conversations."""
+        # Build ChatML format messages
+        chat_messages = [{"role": "system", "content": system}]
+
+        # Only include last 10 conversation turns, stripping action lines
+        recent = messages[-12:]
+        for msg in recent:
+            role = msg["role"]
+            content = msg["content"]
+            # Strip !!ACTION: lines so LLM doesn't repeat them
+            clean, _ = self._parse_actions(content)
+            if clean:
+                chat_messages.append({"role": role, "content": clean})
+
+        try:
+            resp = requests.post(
+                f"{self._ollama_url}/api/chat",
+                json={
+                    "model": settings.local_llm_model,
+                    "messages": chat_messages,
+                    "stream": False,
+                    "options": {
+                        "temperature": 0.8,
+                        "num_predict": 300,
+                        "top_p": 0.9,
+                        "stop": ["\nUSER:", "\nASSISTANT:", "!!ACTION:"],
+                    },
+                },
+                timeout=120,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            content = data.get("message", {}).get("content", "").strip()
+
+            # Clean up common qwen2.5 repetition artifacts
+            content = self._clean_repetition(content)
+
+            return content
+        except Exception:
+            # Fallback to text completion
+            prompt = self._build_llm_prompt(system, messages)
+            raw = self.llm._call_ollama(prompt, num_predict=300, temperature=0.8)
+            return self._clean_repetition(raw)
+
     def _build_llm_prompt(self, system: str, messages: list) -> str:
-        """Build the full prompt for the LLM."""
-        # Only include last 10 messages to stay within context window
+        """Fallback: build text completion prompt."""
         recent = messages[-10:]
         parts = [system, ""]
         for msg in recent:
             role = msg["role"].upper()
             content = msg["content"]
-            if msg["role"] == "assistant" and msg.get("actions"):
-                # Don't include action commands in the prompt
-                clean, _ = self._parse_actions(content)
+            clean, _ = self._parse_actions(content)
+            if clean:
                 parts.append(f"{role}: {clean}")
-            else:
-                parts.append(f"{role}: {content}")
         parts.append("ASSISTANT:")
         return "\n\n".join(parts)
 
-    def _call_llm(self, prompt: str) -> str:
-        """Call the local LLM."""
-        return self.llm._call_ollama(prompt, num_predict=500, temperature=0.8)
+    @staticmethod
+    def _clean_repetition(text: str) -> str:
+        """Remove common LLM repetition artifacts (trailing word repeats, etc)."""
+        if not text:
+            return text
+        lines = text.splitlines()
+        if not lines:
+            return text
+
+        # Remove empty trailing lines
+        while lines and not lines[-1].strip():
+            lines.pop()
+
+        # If the last line is a single word/phrase that appears in the previous line, drop it
+        if len(lines) >= 2:
+            last = lines[-1].strip()
+            prev = lines[-2].strip()
+            if last and last in prev and len(last) < len(prev) / 2:
+                lines.pop()
+
+        return "\n".join(lines).strip()
 
     def _parse_actions(self, text: str) -> tuple[str, list[tuple[str, str]]]:
         """Extract !!ACTION: commands from text, return cleaned text + action list."""
@@ -162,10 +223,8 @@ class ChatService:
         if action_type == "generate_options":
             mode = arg or state.get("mode", "horror")
             state["mode"] = mode
-            lang = state.get("language", "en")
-            tone = state.get("tone", "friendly")
             try:
-                options = self.llm.generate_options(mode=mode, language=lang, tone=tone, count=3)
+                options = self.llm.generate_options(mode=mode, language="en", tone="friendly", count=3)
                 state["options"] = options
                 return {"type": "options", "data": options}
             except Exception as e:
@@ -233,8 +292,8 @@ class ChatService:
             mode=state.get("mode", "horror"),
             title=title,
             content=content,
-            language=state.get("language", "en"),
-            tone=state.get("tone", "friendly"),
+            language="en",
+            tone="friendly",
             use_gemini_refine=False,
             create_audio=True,
             create_video=True,
