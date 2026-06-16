@@ -333,6 +333,7 @@ def web_home() -> str:
 
     <script>
       let sessionId = localStorage.getItem('chatSession') || '';
+      let isSending = false;
       const tokenInput = document.getElementById('tokenInput');
       tokenInput.value = localStorage.getItem('adminToken') || '';
 
@@ -435,12 +436,14 @@ def web_home() -> str:
       }
 
       async function sendMessage() {
+        if (isSending) return;
         const input = document.getElementById('msgInput');
         const msg = input.value.trim();
         if (!msg) return;
         if (!getToken()) { alert('Enter admin token first'); return; }
         await ensureSession();
 
+        isSending = true;
         input.value = '';
         input.style.height = 'auto';
         document.getElementById('sendBtn').disabled = true;
@@ -461,6 +464,7 @@ def web_home() -> str:
           addBubble('ai', '⚠️ Error: ' + escapeHtml(e.message));
         }
         document.getElementById('sendBtn').disabled = false;
+        isSending = false;
       }
 
       window.pickOption = async function(idx) {
