@@ -30,44 +30,26 @@ class ChatService:
     # Public API
     # ------------------------------------------------------------------
     def process_message(self, session_id: str, user_message: str) -> dict:
-        """Handle one user message and return the full response."""
         session = self._load_session(session_id)
         session["messages"].append({"role": "user", "content": user_message, "time": datetime.utcnow().isoformat()})
-
-        # Build context
         context = self._build_context(session)
         system = self._system_prompt.replace("{context}", context)
-
-        # Call LLM
         raw_response = self._call_chat(system, session["messages"])
-
-        # Parse actions
         clean_text, actions = self._parse_actions(raw_response)
-
-        # Execute actions
         action_results = []
         for action_type, action_arg in actions:
             result = self._execute_action(session, action_type, action_arg, clean_text)
             action_results.append(result)
-
-        # Save assistant message
         session["messages"].append({
-            "role": "assistant",
-            "content": clean_text,
-            "time": datetime.utcnow().isoformat(),
-            "actions": actions,
+            "role": "assistant", "content": clean_text,
+            "time": datetime.utcnow().isoformat(), "actions": actions,
         })
         self._save_session(session_id, session)
-
-        # Auto-save to JSONL for fine-tuning
         self._auto_save_finetune(session_id, session["messages"][-2:])
-
         return {
-            "message": clean_text,
-            "actions": actions,
+            "message": clean_text, "actions": actions,
             "action_results": action_results,
-            "state": session.get("state", {}),
-            "session_id": session_id,
+            "state": session.get("state", {}), "session_id": session_id,
         }
 
     def get_session(self, session_id: str) -> dict:
@@ -75,15 +57,11 @@ class ChatService:
 
     def create_session(self) -> str:
         sid = str(uuid4())[:8]
-        self.redis.setex(
-            f"chat:session:{sid}",
-            86400 * 7,
-            json.dumps({"messages": [], "state": {}, "created": datetime.utcnow().isoformat()}, ensure_ascii=False),
-        )
+        self.redis.setex(f"chat:session:{sid}", 86400 * 7, json.dumps(
+            {"messages": [], "state": {}, "created": datetime.utcnow().isoformat()}, ensure_ascii=False))
         return sid
 
     def export_chat(self, session_id: str) -> str:
-        """Export session as JSONL for fine-tuning."""
         session = self._load_session(session_id)
         lines = []
         for msg in session["messages"]:
@@ -94,7 +72,6 @@ class ChatService:
     # Internal
     # ------------------------------------------------------------------
     def _auto_save_finetune(self, session_id: str, new_messages: list) -> None:
-        """Append new messages to the fine-tuning JSONL file."""
         try:
             date_str = datetime.utcnow().strftime("%Y-%m-%d")
             path = _FINETUNE_DIR / f"chat_{date_str}.jsonl"
@@ -102,7 +79,7 @@ class ChatService:
                 for msg in new_messages:
                     f.write(json.dumps({"role": msg["role"], "content": msg["content"]}, ensure_ascii=False) + "\n")
         except Exception:
-            pass  # Don't fail on training data save
+            pass
 
     def _load_session(self, session_id: str) -> dict:
         raw = self.redis.get(f"chat:session:{session_id}")
@@ -121,38 +98,24 @@ class ChatService:
         if state.get("video_source"):
             parts.append(f"Video source: {state['video_source']}")
         if state.get("last_content"):
-            preview = state["last_content"][:200] + "..."
-            parts.append(f"Last written content (will be used for submit): {preview}")
+            parts.append(f"Last written content (will be used): {state['last_content'][:200]}...")
         if state.get("job_id"):
             parts.append(f"Last job: {state['job_id']}")
         return "\n".join(parts)
 
     def _call_chat(self, system: str, messages: list) -> str:
         chat_messages = [{"role": "system", "content": system}]
-        recent = messages[-15:]
-        for msg in recent:
-            role = msg["role"]
-            content = msg["content"]
-            clean, _ = self._parse_actions(content)
+        for msg in messages[-15:]:
+            clean, _ = self._parse_actions(msg["content"])
             if clean:
-                chat_messages.append({"role": role, "content": clean})
-
+                chat_messages.append({"role": msg["role"], "content": clean})
         try:
             resp = requests.post(
                 f"{self._ollama_url}/api/chat",
-                json={
-                    "model": settings.local_llm_model,
-                    "messages": chat_messages,
-                    "stream": False,
-                    "options": {
-                        "temperature": 0.8,
-                        "num_predict": 800,
-                        "top_p": 0.9,
-                        "stop": ["\nUSER:", "\nASSISTANT:", "!!ACTION:"],
-                    },
-                },
-                timeout=180,
-            )
+                json={"model": settings.local_llm_model, "messages": chat_messages, "stream": False,
+                      "options": {"temperature": 0.8, "num_predict": 800, "top_p": 0.9,
+                                  "stop": ["\nUSER:", "\nASSISTANT:", "!!ACTION:"]}},
+                timeout=180)
             resp.raise_for_status()
             return resp.json().get("message", {}).get("content", "").strip()
         except Exception:
@@ -164,10 +127,9 @@ class ChatService:
         recent = messages[-10:]
         parts = [system, ""]
         for msg in recent:
-            role = msg["role"].upper()
             clean, _ = self._parse_actions(msg["content"])
             if clean:
-                parts.append(f"{role}: {clean}")
+                parts.append(f"{msg['role'].upper()}: {clean}")
         parts.append("ASSISTANT:")
         return "\n\n".join(parts)
 
@@ -191,9 +153,7 @@ class ChatService:
         for line in text.splitlines():
             match = re.match(r'^!!ACTION:\s*(\S+)\s*(.*)', line.strip(), re.IGNORECASE)
             if match:
-                action_type = match.group(1).lower()
-                action_arg = match.group(2).strip()
-                actions.append((action_type, action_arg))
+                actions.append((match.group(1).lower(), match.group(2).strip()))
             else:
                 clean_lines.append(line)
         return "\n".join(clean_lines).strip(), actions
@@ -203,71 +163,53 @@ class ChatService:
 
         if action_type == "set_voice":
             valid = {"af_heart", "af_bella", "af_nicole", "am_adam", "am_michael"}
-            voice = arg if arg in valid else "af_heart"
-            state["voice"] = voice
-            return {"type": "voice", "voice": voice}
-
+            state["voice"] = arg if arg in valid else "af_heart"
+            return {"type": "voice", "voice": state["voice"]}
         elif action_type == "set_video_source":
-            src = arg if arg in ("internet", "self") else "internet"
-            state["video_source"] = src
-            return {"type": "video_source", "source": src}
-
+            state["video_source"] = arg if arg in ("internet", "self") else "internet"
+            return {"type": "video_source", "source": state["video_source"]}
         elif action_type == "set_keyword":
             state["video_keyword"] = arg
             return {"type": "keyword", "keyword": arg}
-
         elif action_type == "set_telegram":
             state["telegram_chat_id"] = arg
             return {"type": "telegram", "chat_id": arg}
-
         elif action_type == "submit":
-            return self._submit_job(session)
-
+            return self._submit_job(session, create_video=True)
+        elif action_type == "submit_audio":
+            return self._submit_job(session, create_video=False)
         elif action_type == "check_jobs":
-            jobs = self.queue.list_recent_jobs(limit=10)
-            return {"type": "jobs", "data": jobs}
-
+            return {"type": "jobs", "data": self.queue.list_recent_jobs(limit=10)}
         elif action_type == "export_chat":
             return {"type": "export_ready", "note": "Auto-saved to /app/data/finetune/"}
 
-        # Track writing style from user feedback
+        # Track last written content
         if action_type == "" and assistant_content and len(assistant_content) > 100:
             state["last_content"] = assistant_content
-
         return {"type": "ok"}
 
-    def _submit_job(self, session: dict) -> dict:
-        """Build job from the last AI-written content."""
+    def _submit_job(self, session: dict, create_video: bool = True) -> dict:
+        """Build and queue a job. create_video=False = audio-only."""
         state = session.get("state", {})
         content = state.get("last_content", "")
-
-        # If no tracked content, find last assistant message
         if not content:
             for msg in reversed(session["messages"]):
                 if msg["role"] == "assistant" and len(msg["content"]) > 100:
                     content = msg["content"]
                     break
-
         if not content or len(content) < 50:
             return {"type": "error", "message": "No content to submit. Write something first!"}
 
-        # Generate title from first sentence
         title = content.split(".")[0].strip()[:120]
 
         from app.schemas import JobPayload
-
         job_id = str(uuid4())
         payload = JobPayload(
-            job_id=job_id,
-            created_at=datetime.utcnow().isoformat(),
-            mode="horror",
-            title=title,
-            content=content,
-            language="en",
-            tone="friendly",
+            job_id=job_id, created_at=datetime.utcnow().isoformat(),
+            mode="horror", title=title, content=content, language="en", tone="friendly",
             use_gemini_refine=False,
             create_audio=True,
-            create_video=True,
+            create_video=create_video,
             video_source_type=state.get("video_source", "internet"),
             video_keyword=state.get("video_keyword"),
             user_image_path=state.get("image_path"),
@@ -275,16 +217,11 @@ class ChatService:
             notify_telegram=bool(state.get("telegram_chat_id")),
             telegram_chat_id=state.get("telegram_chat_id"),
         )
-
         self.queue.enqueue(payload.model_dump())
-        self.queue.set_job_status(
-            job_id=job_id,
-            payload={
-                "job_id": job_id, "status": "queued", "title": title,
-                "mode": payload.mode, "queued_at": datetime.utcnow().isoformat(),
-                "payload": payload.model_dump(),
-            },
-        )
-
+        self.queue.set_job_status(job_id=job_id, payload={
+            "job_id": job_id, "status": "queued", "title": title, "mode": payload.mode,
+            "queued_at": datetime.utcnow().isoformat(), "payload": payload.model_dump(),
+        })
         state["job_id"] = job_id
-        return {"type": "job_submitted", "job_id": job_id, "title": title}
+        job_type = "video" if create_video else "audio"
+        return {"type": "job_submitted", "job_id": job_id, "title": title, "job_type": job_type}
