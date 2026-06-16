@@ -1,3 +1,4 @@
+import re
 import subprocess
 from pathlib import Path
 from datetime import datetime
@@ -17,43 +18,26 @@ from app.services.soundscape_service import SoundscapeService
 
 
 def _clean_content_for_tts(content: str) -> str:
-    """Remove AI conversational wrapper phrases and markdown from content for TTS."""
-    import re
-    lines = content.splitlines()
-    cleaned_lines = []
-    # Patterns that indicate AI chat wrapper (skip these lines entirely)
-    chat_wrapper_re = re.compile(
-        r"^(Of course!|Here'?s a|Let me|I'?ll|I will|Sure!|Absolutely!|"
-        r"Got it|Great!|Perfect!|Certainly!|Here you go|Check this out|"
-        r"Here is|Allow me|I hope|Feel free|Let me know|Would you like|"
-        r"What do you think|I'?m happy|Happy to|Glad to|No problem|"
-        r"My pleasure|You'?re welcome|I think|I believe|"
-        r"Rất tốt!|Tôi sẽ|Bạn muốn|Rất vui|Đây là|Tuyệt vời|Được rồi)",
-        re.IGNORECASE
-    )
-    for line in lines:
-        stripped = line.strip()
-        # Skip empty lines
-        if not stripped:
-            continue
-        # Skip AI chat wrapper lines
-        if chat_wrapper_re.match(stripped):
-            continue
-        # Skip markdown headers (### Title)
-        if re.match(r"^#{1,6}\s", stripped):
-            continue
-        # Skip separator lines (---, ***, ___)
-        if re.match(r"^[-*_]{3,}$", stripped):
-            continue
-        # Skip "--- IDEA ---" markers
-        if re.match(r"^---\s*IDEA\s*---", stripped, re.IGNORECASE):
-            continue
-        cleaned_lines.append(line)
-    # Re-join and trim leading/trailing empty lines
-    result = "\n".join(cleaned_lines).strip()
-    # If after cleaning we still have "###" as the first meaningful line, strip it
-    result = re.sub(r"^###\s*[^\n]*\n?", "", result)
-    return result.strip()
+    """Extract the story content between ### and --- markers.
+
+    AI typically responds with:
+        "Certainly! Here's a story: ### The Haunted House --- The door creaked..."
+
+    We take everything between the FIRST ### and FIRST --- (or end of text).
+    If no ### found, returns content as-is.
+    """
+    # Strategy 1: Extract text between ### and ---
+    match = re.search(r"###\s*(.+?)\s*---", content, re.DOTALL | re.IGNORECASE)
+    if match:
+        return match.group(1).strip()
+
+    # Strategy 2: Remove everything before ### (no --- separator found)
+    match = re.search(r"###\s*(.+)", content, re.DOTALL | re.IGNORECASE)
+    if match:
+        return match.group(1).strip()
+
+    # Fallback: return content as-is
+    return content.strip()
 
 
 def main() -> None:
@@ -130,7 +114,7 @@ def main() -> None:
             # === Generate audio ===
             if create_audio:
                 set_running_status(stage="generating_audio", percent=35, detail="Creating voiceover")
-                # Strip AI conversational wrapper from TTS content
+                # Extract clean story content (between ### and ---)
                 tts_text = _clean_content_for_tts(content)
                 is_english = language.lower().startswith("en")
                 kokoro_voice = payload.get("kokoro_voice") or "af_heart"
@@ -161,7 +145,7 @@ def main() -> None:
                         speaking_rate = 5.0 if is_english else 6.0
                         audio_duration_sec = len(content) / speaking_rate
 
-                # === Add background music + sound effects (works for audio-only AND video) ===
+                # === Add background music + sound effects ===
                 if audio_path and Path(audio_path).exists():
                     set_running_status(stage="adding_soundscape", percent=50, detail="Adding music & sound effects")
                     try:
