@@ -305,12 +305,8 @@ def web_home() -> str:
 
     <div id="chatWrap" class="chat-wrap">
       <div class="bubble ai">
-        👋 Hi! I'm <strong>Creator AI</strong>. I help you create short videos for social media.<br/><br/>
-        What kind of content do you want today?<br/>
-        <span style="color:var(--accent-glow)">👻 Horror</span> ·
-        <span style="color:var(--accent-glow)">💰 Wealth</span> ·
-        <span style="color:var(--accent-glow)">🗣️ Soft Skills</span> ·
-        <span style="color:var(--accent-glow)">🔮 Mysteries</span>
+        👋 Hi! I'm <strong>Creator AI</strong> — your writing & video partner.<br/><br/>
+        Just tell me what to write. Teach me your style — I'll learn as we go. When you're happy, say <em>"make video"</em> and I'll produce it.
       </div>
     </div>
 
