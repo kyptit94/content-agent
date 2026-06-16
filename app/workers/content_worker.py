@@ -16,6 +16,35 @@ from app.services.voice_service import VoiceService
 from app.services.soundscape_service import SoundscapeService
 
 
+def _clean_content_for_tts(content: str) -> str:
+    """Remove AI conversational wrapper phrases and markdown from content for TTS."""
+    import re
+    # Remove lines that are AI talking to user (containing "Of course!", "Here's a", etc.)
+    lines = content.splitlines()
+    cleaned_lines = []
+    for line in lines:
+        stripped = line.strip()
+        # Skip AI conversational wrappers
+        if re.match(
+            r"^(Of course!|Here's a|Let me|I'?ll|Sure!|Absolutely!|Got it|Great!|Perfect!|"
+            r"I hope|Feel free|Let me know|Would you like|What do you think|I'm happy|"
+            r"Rất tốt!|Tôi sẽ|Bạn muốn|Rất vui|Đây là)",
+            stripped, re.IGNORECASE
+        ):
+            continue
+        # Skip markdown headers
+        if re.match(r"^#{1,6}\s", stripped):
+            continue
+        # Skip separator lines
+        if re.match(r"^[-*_]{3,}$", stripped):
+            continue
+        # Skip "--- IDEA ---" markers
+        if re.match(r"^---\s*IDEA\s*---", stripped, re.IGNORECASE):
+            continue
+        cleaned_lines.append(line)
+    return "\n".join(cleaned_lines).strip()
+
+
 def main() -> None:
     queue = QueueService(redis_url=settings.redis_url, queue_name=settings.job_queue_name)
     llm = LLMService()
@@ -90,8 +119,8 @@ def main() -> None:
             # === Generate audio ===
             if create_audio:
                 set_running_status(stage="generating_audio", percent=35, detail="Creating voiceover")
-                # No truncation — supports long stories (1 hour+)
-                tts_text = content
+                # Strip AI conversational wrapper from TTS content
+                tts_text = _clean_content_for_tts(content)
                 is_english = language.lower().startswith("en")
                 kokoro_voice = payload.get("kokoro_voice") or "af_heart"
 
@@ -121,6 +150,16 @@ def main() -> None:
                         speaking_rate = 5.0 if is_english else 6.0
                         audio_duration_sec = len(content) / speaking_rate
 
+                # === Add background music + sound effects (works for audio-only AND video) ===
+                if audio_path and Path(audio_path).exists():
+                    set_running_status(stage="adding_soundscape", percent=50, detail="Adding music & sound effects")
+                    try:
+                        mixed = soundscape.process(job_id, content, audio_path)
+                        if mixed and mixed != audio_path:
+                            audio_path = mixed
+                    except Exception:
+                        pass
+
             # === Auto-compose video ===
             video_path = ""
             video_source = ""
@@ -128,7 +167,6 @@ def main() -> None:
                 set_running_status(stage="preparing_video", percent=55, detail="Preparing video source")
                 source_path = ""
                 if user_image_path and Path(user_image_path).exists():
-                    # User uploaded an image as background
                     source_path = user_image_path
                     video_source = "web-upload-user-image"
                 elif video_source_type == "internet":
@@ -162,18 +200,6 @@ def main() -> None:
                         ) or None
                     except Exception:
                         subtitle_path = None
-
-                # === Add background music + sound effects ===
-                final_audio = audio_path
-                if audio_path and Path(audio_path).exists():
-                    set_running_status(stage="adding_soundscape", percent=50, detail="Adding music & sound effects")
-                    try:
-                        mixed = soundscape.process(job_id, content, audio_path)
-                        if mixed and mixed != audio_path:
-                            final_audio = mixed
-                            audio_path = mixed
-                    except Exception:
-                        pass
 
                 set_running_status(stage="composing_video", percent=75, detail="Rendering final video")
                 video_path = composer.compose(

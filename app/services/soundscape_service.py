@@ -10,22 +10,22 @@ from typing import Optional
 # Mood profiles → ffmpeg audio synthesis commands
 _MOOD_AMBIENT: dict[str, str] = {
     "horror": (
-        "anoisesrc=d=9999:c=brown:a=0.15,"
-        "aevalsrc='sin(40*2*PI*t)*0.08+sin(55*2*PI*t)*0.06+sin(80*2*PI*t)*0.04':d=9999,"
+        "anoisesrc=d=9999:c=brown:a=0.40,"
+        "aevalsrc='sin(40*2*PI*t)*0.20+sin(55*2*PI*t)*0.15+sin(80*2*PI*t)*0.10':d=9999,"
         "amix=inputs=2:duration=first,"
         "lowpass=f=300"
     ),
     "mystery": (
-        "aevalsrc='sin(120*2*PI*t)*0.06+sin(180*2*PI*t)*0.04+sin(250*2*PI*t)*0.03':d=9999:s=44100,"
+        "aevalsrc='sin(120*2*PI*t)*0.15+sin(180*2*PI*t)*0.10+sin(250*2*PI*t)*0.08':d=9999:s=44100,"
         "highpass=f=80,lowpass=f=600,"
         "aecho=0.8:0.7:40:0.3"
     ),
     "wealth": (
-        "aevalsrc='sin(200*2*PI*t)*0.04+sin(300*2*PI*t)*0.03+sin(400*2*PI*t)*0.02':d=9999:s=44100,"
+        "aevalsrc='sin(200*2*PI*t)*0.10+sin(300*2*PI*t)*0.08+sin(400*2*PI*t)*0.06':d=9999:s=44100,"
         "lowpass=f=500"
     ),
     "softskills": (
-        "aevalsrc='sin(150*2*PI*t)*0.03+sin(220*2*PI*t)*0.02+sin(330*2*PI*t)*0.02':d=9999:s=44100,"
+        "aevalsrc='sin(150*2*PI*t)*0.08+sin(220*2*PI*t)*0.06+sin(330*2*PI*t)*0.04':d=9999:s=44100,"
         "lowpass=f=400"
     ),
 }
@@ -164,7 +164,7 @@ class SoundscapeService:
             ]
         elif input_count == 2:
             # TTS + ambient: simple mix
-            filter_complex = f"[0:a][1:a]amix=inputs=2:duration=first:weights=1 0.3[a];[a]volume=1.2[aout]"
+            filter_complex = f"[0:a][1:a]amix=inputs=2:duration=first:weights=1 0.6[a];[a]volume=1.2[aout]"
             cmd = inputs + [
                 "-filter_complex", filter_complex,
                 "-map", "[aout]",
