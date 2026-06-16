@@ -67,11 +67,11 @@ class VideoComposeService:
         # Detect best encoder (GPU NVENC or CPU libx264)
         vcodec, vcodec_opts = self._detect_encoder()
 
-        # Build video filter chain
+        # Build video filter chain (NO zoompan — it's a CPU bottleneck)
         vf_parts = [
             "scale=1080:1920:force_original_aspect_ratio=increase",
             "crop=1080:1920",
-            "zoompan=z='min(zoom+0.0004,1.06)':d=1:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=1080x1920:fps=30",
+            "fps=30",
         ]
         if overlay_text:
             vf_parts.append(
