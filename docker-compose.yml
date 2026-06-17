@@ -1,0 +1,47 @@
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: ca_redis
+    restart: unless-stopped
+    ports: ["6379:6379"]
+
+  voice:
+    build:
+      context: .
+      dockerfile: Dockerfile.voice
+    container_name: ca_voice
+    restart: unless-stopped
+    volumes:
+      - ./voice_clone:/app/voice_clone
+      - ./data:/app/data
+    ports: ["8010:8010"]
+    gpus: all
+
+  worker:
+    build: .
+    container_name: ca_worker
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+      - OLLAMA_HOST=http://ollama:11434
+      - VOICE_API_URL=http://voice:8010
+      - MC_VIDEO_PATH=/app/data/mc_video.mp4
+    volumes:
+      - ./data:/app/data
+    depends_on: [redis, voice]
+    gpus: all
+
+  web:
+    build: .
+    container_name: ca_web
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+      - OLLAMA_HOST=http://ollama:11434
+    volumes:
+      - ./data:/app/data
+    ports: ["8000:8000"]
+    command: python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
+    depends_on: [redis]
