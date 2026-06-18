@@ -279,7 +279,20 @@ while true; do
     # 6. Concat intro + story
     video=$(concat_intro_story "$job_id" "$intro" "$story_video")
    
-    # 7. Notify
+    # 7. Save to Redis (for dashboard)
+    python3 -c "
+import json, redis
+r = redis.from_url('redis://localhost:6379/0', decode_responses=True)
+r.set('job:$job_id', json.dumps({
+    'job_id': '$job_id', 'status': 'completed',
+    'title': '''${story}'''[:200].split('.')[0].strip(),
+    'outputs': {'audio_path': '$audio', 'video_path': '$video'}
+}))
+r.lpush('jobs:recent', '$job_id')
+print('[REDIS] Job saved')
+" 2>/dev/null || echo "[REDIS] Save failed (non-critical)"
+   
+    # 8. Notify
     if [ -n "$video" ]; then
         notify "🎬 Video ready! $(echo "$story" | head -1 | cut -c1-80)"
         echo "✅ JOB COMPLETE: $job_id"
