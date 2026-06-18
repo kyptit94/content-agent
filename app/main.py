@@ -1,3 +1,4 @@
+from fastapi.responses import HTMLResponse
 from fastapi import FastAPI
 import json, os
 from datetime import datetime
@@ -10,7 +11,6 @@ def root():
 
 @app.get("/web/jobs")
 def list_jobs(limit: int = 20):
-    """List recent jobs from Redis."""
     import redis
     r = redis.from_url(os.getenv("REDIS_URL", "redis://redis:6379/0"), decode_responses=True)
     job_ids = r.lrange("jobs:recent", 0, limit-1)
@@ -25,15 +25,12 @@ def list_jobs(limit: int = 20):
 def get_audio(job_id: str):
     from fastapi.responses import FileResponse
     path = f"/app/data/outputs/{job_id}.mp3"
-    import os
     if os.path.exists(path):
         return FileResponse(path, media_type="audio/mpeg")
     return {"error": "not found"}
 
-
 @app.get("/web", response_class=HTMLResponse)
 def dashboard():
-    import os, json
     return """<!DOCTYPE html>
 <html>
 <head>
