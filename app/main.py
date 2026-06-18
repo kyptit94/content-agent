@@ -1,4 +1,4 @@
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, FileResponse
 from fastapi import FastAPI
 import json, os
 from datetime import datetime
@@ -23,16 +23,13 @@ def list_jobs(limit: int = 20):
 
 @app.get("/web/jobs/{job_id}/audio")
 def get_audio(job_id: str):
-    from fastapi.responses import FileResponse
     path = f"/app/data/outputs/{job_id}.mp3"
     if os.path.exists(path):
         return FileResponse(path, media_type="audio/mpeg")
     return {"error": "not found"}
 
-
 @app.get("/web/jobs/{job_id}/video")
 def get_video(job_id: str):
-    from fastapi.responses import FileResponse
     path = f"/app/data/outputs/{job_id}.mp4"
     if os.path.exists(path):
         return FileResponse(path, media_type="video/mp4")
@@ -64,6 +61,7 @@ h1{font-size:22px;margin-bottom:4px;background:linear-gradient(135deg,#a78bfa,#8
 .badge.failed{background:#ef444422;color:var(--red)}
 audio{width:100%;max-width:400px;height:32px;margin-top:6px}
 .refresh{color:var(--accent);cursor:pointer;font-size:12px;text-decoration:underline}
+.vid-link{color:var(--accent);font-size:12px;text-decoration:underline;margin-top:4px;display:inline-block}
 </style>
 </head>
 <body>
@@ -87,13 +85,16 @@ document.getElementById('status').innerHTML='<span class="status-ok">✅ Running
 let html='';
 for(const j of jobs){
 html+='<div class="job"><span class="title">'+escapeHtml(j.title||'Untitled')+'</span> <span class="badge '+(j.status||'')+'">'+(j.status||'?')+'</span>';
-if(j.outputsif(j.outputs&&j.outputs.audio_path)html+='<div><audio controlsif(j.outputs&&j.outputs.audio_path)html+='<div><audio controlsj.outputs.audio_path)html+='<div><audio controls preload="metadata" src="/web/jobs/'+j.job_id+'/audio"></audio></div>';
+if(j.outputs&&j.outputs.audio_path){
+html+='<div><audio controls preload="metadata" src="/web/jobs/'+j.job_id+'/audio"></audio></div>';
+}
+html+='<div><a class="vid-link" href="/web/jobs/'+j.job_id+'/video" target="_blank">🎬 Download Video</a></div>';
 html+='<div class="meta">ID: '+j.job_id+'</div></div>';
 }
 document.getElementById('jobs').innerHTML=html||'No jobs yet.';
 }catch(e){document.getElementById('jobs').innerHTML='Error loading.';}
 }
-function escapeHtml(v){return String(v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+function escapeHtml(v){return String(v).replace(/&/g,'&').replace(/</g,'<').replace(/>/g,'>');}
 load();setInterval(load,15000);
 </script>
 </body>
