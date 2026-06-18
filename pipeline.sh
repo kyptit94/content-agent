@@ -25,7 +25,7 @@ mkdir -p "$OUTPUT_DIR"
 # ============================================================
 scrape() {
     local topic="${1:-a haunted house story}"
-    echo "[SCRAPE] Topic: $topic"
+    echo "[SCRAPE] Topic: $topic" >&2
     
     local prompt="Write a short, engaging horror story (200-400 words) about: $topic. Output ONLY the story, no title, no commentary."
     
@@ -34,13 +34,11 @@ scrape() {
         2>/dev/null | python3 -c 'import sys,json; print(json.load(sys.stdin).get("response",""))' 2>/dev/null)
     
     if [ -z "$content" ]; then
-        echo "[SCRAPE] FAILED"
+        echo "[SCRAPE] FAILED" >&2
         return 1
     fi
     
-    local title=$(echo "$content" | head -1 | cut -c1-120)
-    echo "[SCRAPE] Title: $title"
-    echo "[SCRAPE] Words: $(echo "$content" | wc -w)"
+    echo "[SCRAPE] Words: $(echo "$content" | wc -w)" >&2
     echo "$content"
 }
 
