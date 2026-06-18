@@ -101,14 +101,65 @@ image() {
 }
 
 # ============================================================
-# 4. VIDEO COMPOSE (MC PIP + NVENC GPU)
+# 4. INTRO GENERATION (MC full screen + text + AI voice)
 # ============================================================
-compose() {
+create_intro() {
+    local job_id="$1"
+    local mc="${2:-}"
+    local intro_text="${3:-Learn English with Stories}"
+    local intro_audio="${OUTPUT_DIR}/${job_id}_intro.mp3"
+    local intro_video="${OUTPUT_DIR}/${job_id}_intro.mp4"
+    
+    # Generate intro TTS (~3 seconds)
+    echo "[INTRO] Generating intro voice..."
+    python3 -c "
+from gtts import gTTS
+tts = gTTS(text='${intro_text}', lang='en', slow=False)
+tts.save('${intro_audio}')
+" 2>/dev/null
+    
+    if [ ! -f "$intro_audio" ] || [ ! -s "$intro_audio" ]; then
+        echo "[INTRO] TTS failed"
+        return 1
+    fi
+    
+    local intro_dur=$(ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "$intro_audio" 2>/dev/null || echo 3)
+    
+    # Compose intro video: MC full screen + text overlay
+    if [ -n "$mc" ] && [ -f "$mc" ]; then
+        echo "[INTRO] Composing ${intro_dur}s intro with MC full screen..."
+        ffmpeg -y -hwaccel auto -stream_loop -1 -i "$mc" -i "$intro_audio" \
+            -filter_complex "[0:v]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,fps=30,drawtext=text='Learn English with Stories':fontcolor=white:fontsize=64:box=1:boxcolor=black@0.5:boxborderw=10:x=(w-text_w)/2:y=h/3[v]" \
+            -map "[v]" -map 1:a \
+            -t "$intro_dur" \
+            -c:v h264_nvenc -preset p1 -qp 28 -c:a aac -b:a 192k \
+            "$intro_video" 2>/dev/null
+    else
+        # No MC video — just text on black background + TTS
+        ffmpeg -y -f lavfi -i "color=c=0x1a1a2e:s=1080x1920:d=${intro_dur},drawtext=text='Learn English with Stories':fontcolor=white:fontsize=64:box=1:boxcolor=black@0.5:boxborderw=10:x=(w-text_w)/2:y=h/3" \
+            -i "$intro_audio" -map 0:v -map 1:a \
+            -c:v h264_nvenc -preset p1 -qp 28 -c:a aac -b:a 192k \
+            "$intro_video" 2>/dev/null
+    fi
+    
+    if [ -f "$intro_video" ] && [ -s "$intro_video" ]; then
+        echo "[INTRO] Done: $intro_video ($(du -h "$intro_video" | cut -f1))"
+        echo "$intro_video"
+    else
+        echo "[INTRO] FAILED"
+        return 1
+    fi
+}
+
+# ============================================================
+# 5. VIDEO COMPOSE (Image BG + MC PIP + Story Audio)
+# ============================================================
+compose_story() {
     local job_id="$1"
     local bg_image="$2"
     local audio="$3"
     local mc="${4:-}"
-    local output="${OUTPUT_DIR}/${job_id}.mp4"
+    local output="${OUTPUT_DIR}/${job_id}_story.mp4"
     
     local duration=$(ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "$audio" 2>/dev/null || echo 60)
     
@@ -120,7 +171,7 @@ compose() {
     
     if [ -n "$mc" ] && [ -f "$mc" ]; then
         inputs+=(-stream_loop -1 -i "$mc")
-        filters+=";[${input_count}:v]scale=w=iw*${MC_SCALE}:h=ih*${MC_SCALE},setsar=1,format=rgba,colorchannelmixer=aa=0.9[vpip]"
+        filters+=";[${input_count}:v]scale=w=iw*0.35:h=ih*0.35,setsar=1,format=rgba,colorchannelmixer=aa=0.9[vpip]"
         filters+=";[vbg][vpip]overlay=10:H-h-10[vout]"
         map_a="2:a"
         input_count=2
@@ -130,7 +181,7 @@ compose() {
     
     inputs+=(-i "$audio")
     
-    echo "[COMPOSE] Rendering ${duration}s video..."
+    echo "[STORY] Rendering ${duration}s video..."
     ffmpeg "${inputs[@]}" \
         -filter_complex "$filters" \
         -map "$map_v" -map "$map_a" \
@@ -140,10 +191,35 @@ compose() {
         "$output" 2>/dev/null
     
     if [ -f "$output" ] && [ -s "$output" ]; then
-        echo "[COMPOSE] Done: $output ($(du -h "$output" | cut -f1))"
+        echo "[STORY] Done: $output ($(du -h "$output" | cut -f1))"
         echo "$output"
     else
-        echo "[COMPOSE] FAILED"
+        echo "[STORY] FAILED"
+        return 1
+    fi
+}
+
+# ============================================================
+# 6. CONCAT INTRO + STORY
+# ============================================================
+concat_intro_story() {
+    local job_id="$1"
+    local intro_video="$2"
+    local story_video="$3"
+    local output="${OUTPUT_DIR}/${job_id}.mp4"
+    
+    local concat_list="${OUTPUT_DIR}/${job_id}_concat.txt"
+    echo "file '${intro_video}'" > "$concat_list"
+    echo "file '${story_video}'" >> "$concat_list"
+    
+    echo "[CONCAT] Merging intro + story..."
+    ffmpeg -y -f concat -safe 0 -i "$concat_list" -c copy "$output" 2>/dev/null
+    
+    if [ -f "$output" ] && [ -s "$output" ]; then
+        echo "[CONCAT] Done: $output ($(du -h "$output" | cut -f1))"
+        echo "$output"
+    else
+        echo "[CONCAT] FAILED"
         return 1
     fi
 }
@@ -196,10 +272,16 @@ while true; do
     # 3. Image
     bg=$(image "$job_id" "$story")
    
-    # 4. Compose video
-    video=$(compose "$job_id" "$bg" "$audio" "$MC_VIDEO")
+    # 4. Intro (MC full screen + "Learn English with Stories" ~3s)
+    intro=$(create_intro "$job_id" "$MC_VIDEO" "Learn English with Stories") || { sleep 10; continue; }
+    
+    # 5. Story video (image BG + MC PIP + story audio)
+    story_video=$(compose_story "$job_id" "$bg" "$audio" "$MC_VIDEO") || { sleep 10; continue; }
+    
+    # 6. Concat intro + story
+    video=$(concat_intro_story "$job_id" "$intro" "$story_video")
    
-    # 5. Notify
+    # 7. Notify
     if [ -n "$video" ]; then
         notify "🎬 Video ready! $(echo "$story" | head -1 | cut -c1-80)"
         echo "✅ JOB COMPLETE: $job_id"
