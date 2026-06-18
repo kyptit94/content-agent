@@ -9,16 +9,16 @@ class VideoComposer:
         self.crf = crf; self.preset = preset
         _OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
-    def compose(self, job_id, bg_image, audio_path, mc_video="", mc_scale=0.25, mc_x="10", mc_y="H-h-10"):
+    def compose(self, job_id, bg_image, audio_path, mc_video="", mc_scale=0.5, mc_x="10", mc_y="H-h-10"):
         output = str(_OUTPUT_DIR / f"{job_id}.mp4")
         duration = self._dur(audio_path)
         inputs = ["ffmpeg", "-y", "-hwaccel", "auto", "-loop", "1", "-i", bg_image]
         filters = ["[0:v]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,zoompan=z='min(zoom+0.0002,1.04)':d=1:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=1080x1920:fps=30[vbg]"]
         oi = 1
         if mc_video and Path(mc_video).exists():
-            inputs += ["-i", mc_video]
+            inputs += ["-stream_loop", "-1", "-i", mc_video]
             filters.append(f"[{oi}:v]scale=w=iw*{mc_scale}:h=ih*{mc_scale},setsar=1,format=rgba,colorchannelmixer=aa=0.9[vpip]")
-            filters.append(f"[vbg][vpip]overlay={mc_x}:{mc_y}:shortest=1[vout]")
+            filters.append(f"[vbg][vpip]overlay={mc_x}:{mc_y}[vout]")
             oi += 1
         else:
             filters.append("[vbg]null[vout]")
