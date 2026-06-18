@@ -29,6 +29,15 @@ def get_audio(job_id: str):
         return FileResponse(path, media_type="audio/mpeg")
     return {"error": "not found"}
 
+
+@app.get("/web/jobs/{job_id}/video")
+def get_video(job_id: str):
+    from fastapi.responses import FileResponse
+    path = f"/app/data/outputs/{job_id}.mp4"
+    if os.path.exists(path):
+        return FileResponse(path, media_type="video/mp4")
+    return {"error": "not found"}
+
 @app.get("/web", response_class=HTMLResponse)
 def dashboard():
     return """<!DOCTYPE html>
@@ -78,7 +87,7 @@ document.getElementById('status').innerHTML='<span class="status-ok">✅ Running
 let html='';
 for(const j of jobs){
 html+='<div class="job"><span class="title">'+escapeHtml(j.title||'Untitled')+'</span> <span class="badge '+(j.status||'')+'">'+(j.status||'?')+'</span>';
-if(j.outputs&&j.outputs.audio_path)html+='<div><audio controls preload="metadata" src="/web/jobs/'+j.job_id+'/audio"></audio></div>';
+if(j.outputsif(j.outputs&&j.outputs.audio_path)html+='<div><audio controlsif(j.outputs&&j.outputs.audio_path)html+='<div><audio controlsj.outputs.audio_path)html+='<div><audio controls preload="metadata" src="/web/jobs/'+j.job_id+'/audio"></audio></div>';
 html+='<div class="meta">ID: '+j.job_id+'</div></div>';
 }
 document.getElementById('jobs').innerHTML=html||'No jobs yet.';
