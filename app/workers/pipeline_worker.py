@@ -148,7 +148,7 @@ def main():
             # 5. Compose video with MC PIP + NVENC
             mc_video = MC_VIDEO_PATH if Path(MC_VIDEO_PATH).exists() else ""
             try:
-                video_path = composer.compose(job_id, bg_image, audio_path, mc_video, mc_scale=0.22, mc_x="10", mc_y="H-h-10")
+                video_path = composer.compose(job_id, bg_image, audio_path, mc_video, mc_scale=0.5, mc_x="10", mc_y="H-h-10")
                 if video_path and Path(video_path).exists() and Path(video_path).stat().st_size > 1000:
                     print(f"[WORKER] Video created: {video_path}")
                     notify_telegram(f"🎬 Video ready: [{job_id}] {story['title'][:80]}")
