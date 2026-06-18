@@ -1,6 +1,6 @@
 from fastapi.responses import HTMLResponse, FileResponse
 from fastapi import FastAPI
-import json, os
+import json, os, subprocess
 from datetime import datetime
 
 app = FastAPI()
@@ -38,17 +38,15 @@ def get_video(job_id: str):
 @app.post("/web/create-job")
 def create_job():
     """Trigger a new pipeline job on the host."""
-    import subprocess, os
     try:
         subprocess.Popen(
             ["timeout", "120", "bash", "/home/ky/Desktop/AI_AGENT/pipeline.sh"],
             env={**os.environ, "OLLAMA_HOST": "172.17.0.1:11434", "PEXELS_KEY": "idr99a4IaSHBp1YxWKkPEiMcDXYUTfJuIcS9ZRTKKWsA0GJGlrEJz4zD", "MC_VIDEO": "/home/ky/Desktop/AI_AGENT/data/mc_video.mp4"},
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
         )
-        return {"status": "ok", "message": "Job started!"}
+        return {"status": "ok", "message": "Job started! Refresh in 30s to see results."}
     except Exception as e:
         return {"status": "error", "message": str(e)}
-
 
 @app.get("/web", response_class=HTMLResponse)
 def dashboard():
@@ -66,6 +64,9 @@ h1{font-size:22px;margin-bottom:4px;background:linear-gradient(135deg,#a78bfa,#8
 .sub{color:var(--muted);font-size:13px;margin-bottom:20px}
 .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:12px}
 .card h3{margin-bottom:8px;color:var(--accent)}
+.btn{display:inline-block;padding:10px 20px;background:linear-gradient(135deg,#7c3aed,#6366f1);color:#fff;border:none;border-radius:8px;font-weight:700;font-size:14px;cursor:pointer;margin-bottom:12px;transition:all .2s}
+.btn:hover{box-shadow:0 0 20px #7c3aed55}.btn:disabled{opacity:.5;cursor:not-allowed}
+.msg{padding:8px 12px;border-radius:8px;font-size:13px;margin-bottom:12px}.msg.ok{background:#10b98122;color:#34d399;border:1px solid #10b98144}.msg.err{background:#ef444422;color:#fca5a5;border:1px solid #ef444444}
 .status-ok{color:var(--green)} .status-warn{color:var(--warn)} .status-err{color:var(--red)}
 .job{border:1px solid var(--line);border-radius:8px;padding:10px;margin-bottom:8px;background:var(--bg)}
 .job .title{font-weight:600}
@@ -82,6 +83,8 @@ audio{width:100%;max-width:400px;height:32px;margin-top:6px}
 <body>
 <h1>🤖 Content Agent v2</h1>
 <p class="sub">Auto pipeline: Scrape → TTS → Image → Video → Publish</p>
+<button class="btn" onclick="createJob()" id="createBtn">🎬 Create New Video</button>
+<div id="createMsg"></div>
 <div class="card">
 <h3>📊 System Status</h3>
 <div id="status">Loading...</div>
@@ -91,6 +94,17 @@ audio{width:100%;max-width:400px;height:32px;margin-top:6px}
 <div id="jobs">Loading...</div>
 </div>
 <script>
+async function createJob(){
+const btn=document.getElementById('createBtn');const msg=document.getElementById('createMsg');
+btn.disabled=true;btn.innerText='⏳ Creating...';
+try{
+const r=await fetch('/web/create-job',{method:'POST'});
+const d=await r.json();
+msg.innerHTML='<div class="msg '+(d.status=='ok'?'ok':'err')+'">'+(d.status=='ok'?'✅ Job started! Video will appear in ~30 seconds.':'❌ '+d.message)+'</div>';
+if(d.status=='ok')setTimeout(()=>{msg.innerHTML='';load();},5000);
+}catch(e){msg.innerHTML='<div class="msg err">Network error</div>';}
+btn.disabled=false;btn.innerText='🎬 Create New Video';
+}
 async function load(){
 try{
 const r=await fetch('/web/jobs');
