@@ -9,7 +9,7 @@ class VideoComposer:
         self.crf = crf; self.preset = preset
         _OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
-    def compose(self, job_id, bg_image, audio_path, mc_video="", mc_scale=0.5, mc_x="10", mc_y="H-h-10"):
+    def compose(self, job_id, bg_image, audio_path, mc_video="", mc_scale=0.7, mc_x="10", mc_y="H-h-10"):
         output = str(_OUTPUT_DIR / f"{job_id}.mp4")
         duration = self._dur(audio_path)
         inputs = ["ffmpeg", "-y", "-hwaccel", "auto", "-loop", "1", "-i", bg_image]
