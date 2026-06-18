@@ -35,6 +35,21 @@ def get_video(job_id: str):
         return FileResponse(path, media_type="video/mp4")
     return {"error": "not found"}
 
+@app.post("/web/create-job")
+def create_job():
+    """Trigger a new pipeline job on the host."""
+    import subprocess, os
+    try:
+        subprocess.Popen(
+            ["timeout", "120", "bash", "/home/ky/Desktop/AI_AGENT/pipeline.sh"],
+            env={**os.environ, "OLLAMA_HOST": "172.17.0.1:11434", "PEXELS_KEY": "idr99a4IaSHBp1YxWKkPEiMcDXYUTfJuIcS9ZRTKKWsA0GJGlrEJz4zD", "MC_VIDEO": "/home/ky/Desktop/AI_AGENT/data/mc_video.mp4"},
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        )
+        return {"status": "ok", "message": "Job started!"}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
 @app.get("/web", response_class=HTMLResponse)
 def dashboard():
     return """<!DOCTYPE html>
