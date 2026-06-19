@@ -87,7 +87,7 @@ class VideoComposer:
             subprocess.run(seg_cmd, check=False, capture_output=True, text=True, timeout=300)
             print(f"[SLIDESHOW] Segment {i+1}/{num_images}: {seg_out} {'OK' if Path(seg_out).exists() else 'FAIL'}")
         
-        # Crossfade all segments with xfade transition (VISIBLE IMAGE CHANGES!)
+        # Concat all segments (simple concat, more reliable than xfade for many segments)
         valid_segs = [sf for sf in segment_files if Path(sf).exists()]
         
         if len(valid_segs) == 1:
@@ -96,32 +96,26 @@ class VideoComposer:
                    "-shortest", output]
             subprocess.run(cmd, check=False, capture_output=True, text=True, timeout=300)
         elif len(valid_segs) > 1:
-            xfade_cmd = ["ffmpeg", "-y", "-hwaccel", "auto"]
-            for sf in valid_segs:
-                xfade_cmd += ["-i", sf]
-            xfade_cmd += ["-i", audio_path]
+            # Write concat file
+            concat_path = str(_OUTPUT_DIR / f"{job_id}_concat.txt")
+            with open(concat_path, "w") as f:
+                for sf in valid_segs:
+                    f.write(f"file '{sf}'\n")
             
-            # Build xfade chain: each image fades into the next (0.6s transition)
-            xfade_dur = 0.6
-            filters = []
-            prev = "0"
-            for i in range(1, len(valid_segs)):
-                label = f"x{i-1}"
-                offset = i * slide_duration - i * xfade_dur
-                filters.append(f"[{prev}][{i}]xfade=transition=fade:duration={xfade_dur}:offset={offset}[{label}]")
-                prev = label
-            
-            filter_str = ";".join(filters)
-            audio_idx = len(valid_segs)
-            xfade_cmd += [
-                "-filter_complex", filter_str,
-                "-map", f"[{prev}]",
-                "-map", f"{audio_idx}:a",
-                "-c:v", "h264_nvenc", "-preset", self.preset, "-qp", str(self.crf),
-                "-c:a", "aac", "-b:a", "192k",
+            cmd = [
+                "ffmpeg", "-y", "-hwaccel", "auto",
+                "-f", "concat", "-safe", "0", "-i", concat_path,
+                "-i", audio_path,
+                "-c:v", "copy", "-c:a", "aac", "-b:a", "192k",
                 "-shortest", output
             ]
-            subprocess.run(xfade_cmd, check=False, capture_output=True, text=True, timeout=600)
+            subprocess.run(cmd, check=False, capture_output=True, text=True, timeout=300)
+            # Clean up concat file
+            try:
+                if os.path.exists(concat_path):
+                    os.remove(concat_path)
+            except:
+                pass
 
         # Cleanup segments
         for sf in segment_files:
