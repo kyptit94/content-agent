@@ -24,9 +24,10 @@ services:
     env_file: .env
     environment:
       - REDIS_URL=redis://redis:6379/0
-      - OLLAMA_HOST=http://ollama:11434
+      - OLLAMA_HOST=http://172.17.0.1:11434
       - VOICE_API_URL=http://voice:8010
       - MC_VIDEO_PATH=/app/data/mc_video.mp4
+      - PYTHONUNBUFFERED=1
     volumes:
       - ./data:/app/data
     depends_on: [redis, voice]
@@ -39,7 +40,7 @@ services:
     env_file: .env
     environment:
       - REDIS_URL=redis://redis:6379/0
-      - OLLAMA_HOST=http://ollama:11434
+      - OLLAMA_HOST=http://172.17.0.1:11434
     volumes:
       - ./data:/app/data
     ports: ["8000:8000"]

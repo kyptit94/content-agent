@@ -23,9 +23,12 @@ class ScraperService:
 
         # Strategy 1: Ask LLM to write a story directly (most reliable)
         prompt = (
-            f"Write a very short, engaging story (150-300 words) about: {topic}.\n"
+            f"Write an engaging, atmospheric story (250-350 words) about: {topic}.\n"
             f"Write in {language} language.\n"
-            "The story should be suitable for a 60-90 second voiceover.\n"
+            "The story should have 6-10 sentences with clear visual scenes.\n"
+            "It must be long enough for a 60+ second voiceover at moderate speaking pace.\n"
+            "Use varied sentence lengths for dramatic effect.\n"
+            "End with a clear conclusion that wraps up the story.\n"
             "Output ONLY the story text. No title, no commentary, no markdown."
         )
         content = self._call_llm(prompt)
@@ -69,9 +72,9 @@ class ScraperService:
                     "model": self.model,
                     "prompt": prompt,
                     "stream": False,
-                    "options": {"temperature": 0.85, "num_predict": 800, "top_p": 0.92},
+                    "options": {"temperature": 0.85, "num_predict": 1200, "top_p": 0.92},
                 },
-                timeout=90,
+                timeout=120,
             )
             return resp.json().get("response", "")
         except Exception:

@@ -2,6 +2,7 @@ from fastapi.responses import HTMLResponse, FileResponse
 from fastapi import FastAPI
 import json, os, subprocess
 from datetime import datetime
+from uuid import uuid4
 
 app = FastAPI()
 
@@ -37,16 +38,34 @@ def get_video(job_id: str):
 
 @app.post("/web/create-job")
 def create_job():
-    """Trigger a new pipeline job on the host."""
+    """Queue a pending job request via Redis so the worker picks it up."""
     try:
-        subprocess.Popen(
-            ["timeout", "120", "bash", "/home/ky/Desktop/AI_AGENT/pipeline.sh"],
-            env={**os.environ, "OLLAMA_HOST": "172.17.0.1:11434", "PEXELS_KEY": "idr99a4IaSHBp1YxWKkPEiMcDXYUTfJuIcS9ZRTKKWsA0GJGlrEJz4zD", "MC_VIDEO": "/home/ky/Desktop/AI_AGENT/data/mc_video.mp4"},
-            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-        )
-        return {"status": "ok", "message": "Job started! Refresh in 30s to see results."}
+        import redis as _redis
+        r = _redis.from_url(os.getenv("REDIS_URL", "redis://redis:6379/0"), decode_responses=True)
+        job_id = str(uuid4())[:8]
+        r.set(f"job:{job_id}", json.dumps({
+            "job_id": job_id,
+            "status": "queued",
+            "title": "Queued (click to trigger)",
+            "created_at": datetime.utcnow().isoformat(),
+        }))
+        r.lpush("jobs:recent", job_id)
+        r.lpush("jobs:pending", job_id)
+        r.ltrim("jobs:recent", 0, 50)
+        return {"status": "ok", "message": f"Job {job_id} queued! The worker will pick it up shortly."}
     except Exception as e:
         return {"status": "error", "message": str(e)}
+
+@app.get("/web/logs")
+def web_logs():
+    """Return recent worker logs from Redis."""
+    try:
+        import redis as _redis
+        r = _redis.from_url(os.getenv("REDIS_URL", "redis://redis:6379/0"), decode_responses=True)
+        logs = r.lrange("logs:recent", 0, 49)
+        return {"logs": list(reversed(logs))}
+    except Exception as e:
+        return {"logs": [f"Error reading logs: {e}"]}
 
 @app.get("/web", response_class=HTMLResponse)
 def dashboard():
@@ -93,6 +112,10 @@ audio{width:100%;max-width:400px;height:32px;margin-top:6px}
 <h3>📋 Recent Jobs <span class="refresh" onclick="load()">(refresh)</span></h3>
 <div id="jobs">Loading...</div>
 </div>
+<div class="card">
+<h3>📜 Live Worker Logs <span class="refresh" onclick="loadLogs()">(refresh)</span></h3>
+<div id="logbox" style="background:#0a0c12;border:1px solid var(--line);border-radius:8px;padding:10px;font-family:monospace;font-size:11px;max-height:300px;overflow-y:auto;white-space:pre-wrap;color:#10b981;line-height:1.5">Loading logs...</div>
+</div>
 <script>
 async function createJob(){
 const btn=document.getElementById('createBtn');const msg=document.getElementById('createMsg');
@@ -124,7 +147,13 @@ document.getElementById('jobs').innerHTML=html||'No jobs yet.';
 }catch(e){document.getElementById('jobs').innerHTML='Error loading.';}
 }
 function escapeHtml(v){return String(v).replace(/&/g,'&').replace(/</g,'<').replace(/>/g,'>');}
-load();setInterval(load,15000);
+async function loadLogs(){
+try{
+const r=await fetch('/web/logs');const d=await r.json();
+document.getElementById('logbox').innerHTML=d.logs.map(l=>escapeHtml(l)).join('<br>')||'No logs yet.';
+}catch(e){document.getElementById('logbox').innerHTML='Error loading logs.';}
+}
+load();loadLogs();setInterval(load,15000);setInterval(loadLogs,3000);
 </script>
 </body>
 </html>"""
