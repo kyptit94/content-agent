@@ -8,10 +8,23 @@ from datetime import datetime
 from uuid import uuid4
 
 import redis
+import sys
 
 # Redis client
 REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379/0")
 redis_client = redis.from_url(REDIS_URL, decode_responses=True)
+
+def log(msg: str):
+    """Log to both stdout and Redis for realtime web display."""
+    timestamp = datetime.utcnow().strftime("%H:%M:%S")
+    full_msg = f"[{timestamp}] {msg}"
+    print(full_msg)
+    sys.stdout.flush()
+    try:
+        redis_client.lpush("logs:recent", full_msg)
+        redis_client.ltrim("logs:recent", 0, 100)
+    except Exception:
+        pass
 
 # Config
 OLLAMA_URL = os.getenv("OLLAMA_HOST", "http://ollama:11434")
@@ -67,7 +80,7 @@ def kokoro_tts(text, job_id):
 
 def compose_publish(job_id, audio_path, bg_image, story_title, mc_video=""):
     """Compose video with NVENC and publish to platforms."""
-    video_path = composer.compose(job_id, bg_image, audio_path, mc_video, mc_scale=0.7, mc_x="10", mc_y="H-h-10")
+    video_path = composer.compose(job_id, bg_image, audio_path, mc_video)
     if not video_path:
         return False
 
@@ -109,18 +122,62 @@ def notify_telegram(text):
         pass
 
 def main():
-    print("[WORKER] Pipeline worker starting...")
+    # Monkey-patch stdout to also write to Redis for realtime web logs
+    import io
+    class _LogStream(io.StringIO):
+        def write(self, s):
+            super().write(s)
+            # Also write to Redis (trim prefix to keep clean)
+            for line in s.strip().split("\n"):
+                line = line.strip()
+                if line:
+                    full_msg = f"[{datetime.utcnow().strftime('%H:%M:%S')}] {line}"
+                    try:
+                        redis_client.lpush("logs:recent", full_msg)
+                        redis_client.ltrim("logs:recent", 0, 100)
+                    except Exception:
+                        pass
+            return len(s)
+    sys.stdout = _LogStream()
+
+    log("Pipeline worker starting...")
     while True:
         try:
-            # Pick a random topic
-            topic = random.choice(TOPICS)
+            # Check for pending job requests from web UI
+            topic = None
+            pending_id = None
+            try:
+                pending_id = redis_client.rpop("jobs:pending")
+                if pending_id:
+                    print(f"[WORKER] Picked pending job: {pending_id}")
+                    # Use a default topic for user-requested jobs
+                    topic = random.choice(TOPICS)
+                    # Update job status to running
+                    job_data = json.loads(redis_client.get(f"job:{pending_id}") or "{}")
+                    job_data["status"] = "running"
+                    redis_client.set(f"job:{pending_id}", json.dumps(job_data))
+            except Exception:
+                pass
+
+            # Fallback: pick a random topic if no pending job
+            if not topic:
+                topic = random.choice(TOPICS)
+
             print(f"\n[WORKER] === New job: {topic[:80]} ===")
             notify_telegram(f"📖 Scraping: {topic[:100]}")
+
+            # Use pending job_id if available, otherwise generate new one
+            job_id = pending_id if pending_id else str(uuid4())
 
             # 1. Scrape/generate story
             story = scraper.scrape(topic, language="en")
             if not story["content"]:
                 print("[WORKER] Scrape failed, skipping")
+                if pending_id:
+                    redis_client.set(f"job:{pending_id}", json.dumps({
+                        "job_id": pending_id, "status": "failed",
+                        "title": "Scrape failed",
+                    }))
                 time.sleep(10)
                 continue
 
@@ -131,38 +188,51 @@ def main():
                     story["content"] = en
 
             # 3. Generate TTS audio
-            job_id = str(uuid4())
             audio_path = kokoro_tts(story["content"], job_id)
             if not audio_path:
                 print("[WORKER] TTS failed, skipping")
+                if pending_id:
+                    redis_client.set(f"job:{pending_id}", json.dumps({
+                        "job_id": pending_id, "status": "failed",
+                        "title": story.get("title", "TTS failed"),
+                    }))
                 time.sleep(10)
                 continue
             print(f"[WORKER] Audio created: {audio_path}")
             notify_telegram(f"🎙️ TTS done: [{job_id}] {story['title'][:80]}")
 
-            # 4. Generate background image
-            bg_image = imager.generate_background(job_id, story["content"])
-            print(f"[WORKER] BG image: {bg_image}")
-            notify_telegram(f"🖼️ Image ready: [{job_id}]")
+            # 4. Generate AI images — one per sentence
+            print(f"[WORKER] Generating AI images for {story['title'][:80]}...")
+            image_paths = imager.generate_images_for_sentences(job_id, story["content"])
+            if not image_paths:
+                # Fallback: single background image
+                bg_image = imager.generate_background(job_id, story["content"])
+                image_paths = [bg_image]
+            print(f"[WORKER] Generated {len(image_paths)} images")
+            notify_telegram(f"🖼️ {len(image_paths)} images ready: [{job_id}]")
 
-            # 5. Compose video with MC PIP + NVENC
+            # 5. Compose slideshow video with MC PIP + NVENC
             mc_video = MC_VIDEO_PATH if Path(MC_VIDEO_PATH).exists() else ""
             try:
-                video_path = composer.compose(job_id, bg_image, audio_path, mc_video, mc_scale=0.7, mc_x="10", mc_y="H-h-10")
+                video_path = composer.compose_slideshow(job_id, image_paths, audio_path, mc_video)
                 if video_path and Path(video_path).exists() and Path(video_path).stat().st_size > 1000:
-                    print(f"[WORKER] Video created: {video_path}")
+                    print(f"[WORKER] Slideshow created: {video_path}")
                     notify_telegram(f"🎬 Video ready: [{job_id}] {story['title'][:80]}")
-                    ok = compose_publish(job_id, audio_path, bg_image, story["title"], mc_video)
+                    ok = compose_publish(job_id, audio_path, image_paths[0], story["title"], mc_video)
                 else:
-                    print(f"[WORKER] Video compose failed, output 0 bytes")
+                    print(f"[WORKER] Slideshow compose failed, output 0 bytes")
             except Exception as ve:
-                print(f"[WORKER] Video compose error: {ve}")
+                print(f"[WORKER] Slideshow compose error: {ve}")
 
             # Track job
             redis_client.set(f"job:{job_id}", json.dumps({
                 "job_id": job_id, "status": "completed", "title": story["title"],
                 "completed_at": datetime.utcnow().isoformat(),
-                "outputs": {"audio_path": audio_path, "image_path": bg_image}
+                "outputs": {
+                    "audio_path": audio_path,
+                    "image_count": len(image_paths),
+                    "image_path": image_paths[0] if image_paths else ""
+                }
             }))
             redis_client.lpush("jobs:recent", job_id)
             redis_client.ltrim("jobs:recent", 0, 50)
