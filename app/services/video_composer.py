@@ -91,10 +91,12 @@ class VideoComposer:
         valid_segs = [sf for sf in segment_files if Path(sf).exists()]
         
         if len(valid_segs) == 1:
-            cmd = ["ffmpeg", "-y", "-hwaccel", "auto", "-i", valid_segs[0],
+            cmd = ["ffmpeg", "-y", "-i", valid_segs[0],
                    "-i", audio_path, "-c:v", "copy", "-c:a", "aac", "-b:a", "192k",
                    "-shortest", output]
-            subprocess.run(cmd, check=False, capture_output=True, text=True, timeout=300)
+            result = subprocess.run(cmd, check=False, capture_output=True, text=True, timeout=300)
+            if not Path(output).exists() or Path(output).stat().st_size == 0:
+                print(f"[SLIDESHOW] Single-segment concat FAILED. stderr: {result.stderr[-500:]}")
         elif len(valid_segs) > 1:
             # Write concat file
             concat_path = str(_OUTPUT_DIR / f"{job_id}_concat.txt")
@@ -102,14 +104,18 @@ class VideoComposer:
                 for sf in valid_segs:
                     f.write(f"file '{sf}'\n")
             
+            # Re-encode concat for reliability (copy may fail with different NVENC GOPs)
             cmd = [
-                "ffmpeg", "-y", "-hwaccel", "auto",
+                "ffmpeg", "-y",
                 "-f", "concat", "-safe", "0", "-i", concat_path,
                 "-i", audio_path,
-                "-c:v", "copy", "-c:a", "aac", "-b:a", "192k",
+                "-c:v", "h264_nvenc", "-preset", self.preset, "-qp", str(self.crf),
+                "-c:a", "aac", "-b:a", "192k",
                 "-shortest", output
             ]
-            subprocess.run(cmd, check=False, capture_output=True, text=True, timeout=300)
+            result = subprocess.run(cmd, check=False, capture_output=True, text=True, timeout=600)
+            if not Path(output).exists() or Path(output).stat().st_size == 0:
+                print(f"[SLIDESHOW] Concat FAILED. stderr: {result.stderr[-1000:]}")
             # Clean up concat file
             try:
                 if os.path.exists(concat_path):
@@ -117,13 +123,14 @@ class VideoComposer:
             except:
                 pass
 
-        # Cleanup segments
-        for sf in segment_files:
-            try:
-                if os.path.exists(sf):
-                    os.remove(sf)
-            except:
-                pass
+        # Cleanup segments (keep if output failed for debugging)
+        if Path(output).exists() and Path(output).stat().st_size > 0:
+            for sf in segment_files:
+                try:
+                    if os.path.exists(sf):
+                        os.remove(sf)
+                except:
+                    pass
         try:
             if os.path.exists(concat_file):
                 os.remove(concat_file)
