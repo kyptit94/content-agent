@@ -11,7 +11,7 @@ class VideoComposer:
         self.crf = crf; self.preset = preset
         _OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
-    def compose(self, job_id, bg_image, audio_path, mc_video="", mc_scale=1.4, mc_x="W-w-10", mc_y="10"):
+    def compose(self, job_id, bg_image, audio_path, mc_video="", mc_scale=1.0, mc_x="W-w-10", mc_y="H-h-10"):
         output = str(_OUTPUT_DIR / f"{job_id}.mp4")
         duration = self._dur(audio_path)
         inputs = ["ffmpeg", "-y", "-hwaccel", "auto", "-loop", "1", "-i", bg_image]
@@ -29,7 +29,7 @@ class VideoComposer:
         subprocess.run(cmd, check=False, capture_output=True, text=True, timeout=600)
         return output if Path(output).exists() else ""
 
-    def compose_slideshow(self, job_id, images: list, audio_path, mc_video="", mc_scale=1.8, mc_x="W-w-10", mc_y="10"):
+    def compose_slideshow(self, job_id, images: list, audio_path, mc_video="", mc_scale=1.2, mc_x="W-w-10", mc_y="H-h-10"):
         """
         Create a slideshow video: each image gets equal time slice of audio duration.
         Images are cross-faded with Ken Burns zoom effect + MC PIP overlay.
